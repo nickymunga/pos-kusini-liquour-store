@@ -176,9 +176,12 @@ class Reports extends MY_Controller
             as profit", FALSE)
         ->from('sale_items')
         ->join('products', 'sale_items.product_id=products.id', 'left')
+		//->join('purchase_items', 'purchase_items.product_id=products.id', 'left')
+		//->join('purchases', 'purchase_items.purchase_id=purchases.id', 'left')
         ->join('sales', 'sale_items.sale_id=sales.id', 'left');
         if ($this->session->userdata('store_id')) {
             $this->datatables->where('sales.store_id', $this->session->userdata('store_id'));
+			//$this->datatables->where('purchases.store_id', $this->session->userdata('store_id'));
         }
         $this->datatables->group_by('products.id');
 

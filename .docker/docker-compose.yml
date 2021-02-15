@@ -1,0 +1,79 @@
+version: '3'
+services:
+
+  #PHP Service
+  php:
+    build:
+      context: ..
+      dockerfile: ./.docker/Dockerfile
+    #image: digitalocean.com/php
+    container_name: ${COMPOSE_PROJECT_NAME}-php
+    restart: unless-stopped
+    tty: true
+    environment:
+      SERVICE_NAME: php
+      SERVICE_TAGS: dev
+    working_dir: /var/www
+    volumes:
+      - ../:/var/www
+      - ./php/local.ini:/usr/local/etc/php/conf.d/local.ini
+    networks:
+      - network
+
+
+  #Nginx Mini-Market Service
+  nginx-mini-market:
+    image: nginx:alpine
+    container_name: ${COMPOSE_PROJECT_NAME}-nginx
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "${APP_PORT_HTTP}:80"
+    volumes:
+      - ../:/var/www
+      - ./nginx/conf.d/:/etc/nginx/conf.d/
+    networks:
+      - network
+
+#Nginx Print Server Service
+  nginx-print:
+    image: nginx:alpine
+    container_name: ${COMPOSE_PROJECT_NAME}-print-server
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "${APP_PORT_HTTP_PRINT_SERVER}:85"
+      - "${APP_PORT_HTTPS_PRINT_SERVER}:446"
+    volumes:
+      - ../:/var/www
+      - ./nginx_print_server/conf.d/:/etc/nginx/conf.d/
+    networks:
+      - network
+
+  #MySQL Service
+  db:
+    image: mysql:latest
+    container_name: ${COMPOSE_PROJECT_NAME}-db
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "3310:3306"
+    environment:
+      MYSQL_DATABASE: ${COMPOSE_PROJECT_NAME}
+      MYSQL_ROOT_PASSWORD: root
+      SERVICE_TAGS: dev
+      SERVICE_NAME: mysql
+    volumes:
+      - dbdata_pos:/var/lib/mysql/
+      - ./mysql/my.cnf:/etc/mysql/my.cnf
+    networks:
+      - network
+
+#Docker Networks
+networks:
+  network:
+    driver: bridge
+#Volumes
+volumes:
+  dbdata_pos:
+    driver: local

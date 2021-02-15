@@ -34,7 +34,7 @@ if ($this->input->post('end_date')) {
                 d.<?=$this->security->get_csrf_token_name();?> = "<?=$this->security->get_csrf_hash()?>";
             }},
             "buttons": [
-            { extend: 'copyHtml5', 'footer': true, exportOptions: { columns: [ 0, 1, 2, 3, 4, 5, 6, 7 ] } },
+            { extend: 'copyHtml5', 'footer': true, exportOptions: { columns: [ 0, 1, 2, 3, 4, 5, 6, 7] } },
             { extend: 'excelHtml5', 'footer': true, exportOptions: { columns: [ 0, 1, 2, 3, 4, 5, 6, 7 ] } },
             { extend: 'csvHtml5', 'footer': true, exportOptions: { columns: [ 0, 1, 2, 3, 4, 5, 6, 7 ] } },
             { extend: 'pdfHtml5', orientation: 'landscape', pageSize: 'A4', 'footer': true,
@@ -45,6 +45,7 @@ if ($this->input->post('end_date')) {
             { "data": "id", "visible": false },
             { "data": "code" },
             { "data": "name" },
+			//{ "data": "purchased", "searchable": false, "render": quantityFormat },
             { "data": "sold", "searchable": false, "render": quantityFormat },
             { "data": "tax", "searchable": false, "render": currencyFormat },
             { "data": "cost", "searchable": false, "render": currencyFormat },
@@ -58,6 +59,7 @@ if ($this->input->post('end_date')) {
                 $(api.column(5).footer()).html( cf(api.column(5).data().reduce( function (a, b) { return pf(a) + pf(b); }, 0)) );
                 $(api.column(6).footer()).html( cf(api.column(6).data().reduce( function (a, b) { return pf(a) + pf(b); }, 0)) );
                 $(api.column(7).footer()).html( cf(api.column(7).data().reduce( function (a, b) { return pf(a) + pf(b); }, 0)) );
+				//$(api.column(8).footer()).html( cf(api.column(8).data().reduce( function (a, b) { return pf(a) + pf(b); }, 0)) );
             }
 
         });
@@ -154,7 +156,7 @@ if ($this->input->post('end_date')) {
                                             <th style="max-width:30px;"><?= lang("id"); ?></th>
                                             <th class="col-xs-2"><?= lang("code"); ?></th>
                                             <th><?= lang("name"); ?></th>
-                                            <th class="col-xs-1"><?= lang("sold"); ?></th>
+											<th class="col-xs-1"><?= lang("sold"); ?></th>
                                             <th class="col-xs-1"><?= lang("tax"); ?></th>
                                             <th class="col-xs-1"><?= lang("cost"); ?></th>
                                             <th class="col-xs-1"><?= lang("income"); ?></th>
@@ -163,15 +165,15 @@ if ($this->input->post('end_date')) {
                                     </thead>
                                     <tbody>
                                         <tr>
-                                            <td colspan="8" class="dataTables_empty"><?= lang('loading_data_from_server'); ?></td>
+                                            <td colspan="7" class="dataTables_empty"><?= lang('loading_data_from_server'); ?></td>
                                         </tr>
                                     </tbody>
                                     <tfoot>
                                         <tr class="active">
                                             <th style="max-width:30px;"><input type="text" class="text_filter" placeholder="[<?= lang('id'); ?>]"></th>
                                             <th class="col-sm-2"><input type="text" class="text_filter" placeholder="[<?= lang('code'); ?>]"></th>
-                                            <th><input type="text" class="text_filter" placeholder="[<?= lang('name'); ?>]"></th>
-                                            <th class="col-xs-1"><?= lang("sold"); ?></th>
+                                            <th><input type="text" class="text_filter" placeholder="[<?= lang('name'); ?>]"></th>                                            
+											<th class="col-xs-1"><?= lang("sold"); ?></th>
                                             <th class="col-xs-1"><?= lang("tax"); ?></th>
                                             <th class="col-xs-1"><?= lang("cost"); ?></th>
                                             <th class="col-xs-1"><?= lang("income"); ?></th>
