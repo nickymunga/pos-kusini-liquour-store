@@ -78,7 +78,7 @@ function loadItems() {
                 item_ds = item.row.discount,
                 item_code = item.row.code,
                 item_name = item.row.name.replace(/"/g, '&#034;').replace(/'/g, '&#039;');
-            var unit_price = parseFloat((sale_mode === 'whole_sale') ? item.row.ws_price : item.row.store_price);
+            var unit_price = parseFloat((sale_mode === 'whole_sale') ? item.row.ws_price : item.row.price);
             //var unit_ws_price = parseFloat(item.row.real_unit_ws_price);
             var net_price = unit_price;
            // var net_ws_price = unit_ws_price;

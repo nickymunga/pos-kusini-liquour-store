@@ -364,7 +364,7 @@ class Pos extends MY_Controller {
                         $row->name = $item->product_name;
                         $row->tax = 0;
                     }
-                    $row->price = $item->net_unit_price+($item->item_discount/$item->quantity);
+                    $row->price = $item->unit_price;
                     $row->unit_price = $item->unit_price+($item->item_discount/$item->quantity)+($item->item_tax/$item->quantity);
                     $row->real_unit_price = $item->real_unit_price;
                     $row->discount = $item->discount;

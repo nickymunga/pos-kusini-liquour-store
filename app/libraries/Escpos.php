@@ -45,6 +45,8 @@ class Escpos
         $this->char_per_line = $printer->char_per_line;
         $profile = CapabilityProfile::load($printer->profile);
         $this->printer = new Printer($connector, $profile);
+        $this->printer->initialize();
+        $this->printer->setLineSpacing(20);
 
     }
 
@@ -135,8 +137,8 @@ class Escpos
                 //$this->printer->feed();
             }
             $this->printer->setEmphasis(true);
-            $this->printer->setTextSize(2, 2);
-            $this->printer->text($store->name . "\n");
+            $this->printer->setTextSize(1, 1);
+            $this->printer->text(html_entity_decode($store->name) . "\n");
             $this->printer->setEmphasis(false);
             $this->printer->setTextSize(1, 1);
             $this->printer->text($store->address1 . "\n");
