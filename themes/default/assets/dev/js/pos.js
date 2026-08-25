@@ -1791,6 +1791,46 @@ $(document).ready(function() {
         );
     }
     
+    function refreshMissingCostPrices(items, callback) {
+        var pending = 0;
+        var unavailable = false;
+
+        $.each(items, function() {
+            var item = this;
+            if (item.row.cost_price && parseFloat(item.row.cost_price) > 0) {
+                return;
+            }
+
+            pending++;
+            $.ajax({
+                type: 'get',
+                url: base_url + 'pos/get_product/' + encodeURIComponent(item.row.code),
+                dataType: 'json',
+            })
+                .done(function(data) {
+                    if (data && data.row && data.row.cost_price && parseFloat(data.row.cost_price) > 0) {
+                        item.row.cost_price = data.row.cost_price;
+                    } else {
+                        unavailable = true;
+                    }
+                })
+                .fail(function() {
+                    unavailable = true;
+                })
+                .always(function() {
+                    pending--;
+                    if (pending === 0) {
+                        store('spositems', JSON.stringify(items));
+                        callback(!unavailable);
+                    }
+                });
+        });
+
+        if (pending === 0) {
+            callback(true);
+        }
+    }
+
     function applySaleModeGuards() {
         var cost_sale = $('#sale_mode').val() === 'cost_sale';
         $('#cost-sale-reason-group').toggle(cost_sale);
@@ -1812,12 +1852,17 @@ $(document).ready(function() {
             remove('spos_discount');
             $('#discount_val').val('0');
             if (missing_cost) {
-                bootbox.alert(lang.cost_price_unavailable);
-                $('#sale_mode').val('retail_sale').trigger('change.select2');
-                cost_sale = false;
-                $('#cost-sale-reason-group').hide();
-                $('#cost_sale_reason').prop('required', false);
-                $('#add_discount').removeClass('disabled');
+                refreshMissingCostPrices(spositems, function(success) {
+                    if (!success) {
+                        bootbox.alert(lang.cost_price_unavailable);
+                        $('#sale_mode').val('retail_sale').trigger('change.select2');
+                        $('#cost-sale-reason-group').hide();
+                        $('#cost_sale_reason').prop('required', false);
+                        $('#add_discount').removeClass('disabled');
+                    }
+                    loadItems();
+                });
+                return;
             }
         }
         loadItems();
