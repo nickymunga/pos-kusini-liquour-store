@@ -14,6 +14,28 @@ class Pos extends MY_Controller {
 
     }
 
+    private function validateSaleMode($sale_mode) {
+        if (!in_array($sale_mode, array('retail_sale', 'whole_sale', 'cost_sale'), TRUE)) {
+            $this->session->set_flashdata('error', lang('invalid_sale_mode'));
+            redirect('pos');
+        }
+        if ($sale_mode == 'cost_sale' && !$this->Admin) {
+            $this->session->set_flashdata('error', lang('cost_sale_admin_only'));
+            redirect('pos');
+        }
+    }
+
+    private function prepareProductForPos($product) {
+        $product->price = isset($product->store_price) && $product->store_price > 0 ? $product->store_price : $product->price;
+        $product->ws_price = isset($product->store_ws_price) && $product->store_ws_price > 0 ? $product->store_ws_price : $product->ws_price;
+        if ($this->Admin) {
+            $cost_price = $this->pos_model->getProductCost($product);
+            $product->cost_price = $cost_price === FALSE ? NULL : $cost_price;
+        }
+        unset($product->cost, $product->details);
+        return $product;
+    }
+
     function index($sid = NULL, $eid = NULL) {
         if (!$this->Settings->multi_store) {
             $this->session->set_userdata('store_id', 1);
@@ -26,6 +48,14 @@ class Pos extends MY_Controller {
         if( $this->input->get('edit') ) { $eid = $this->input->get('edit'); }
         if( $this->input->post('eid') ) { $eid = $this->input->post('eid'); }
         if( $this->input->post('did') ) { $did = $this->input->post('did'); } else { $did = NULL; }
+        if ($eid && ($existing_sale = $this->pos_model->getSaleByID($eid)) && $existing_sale->sale_mode == 'cost_sale') {
+            $this->session->set_flashdata('error', lang('cost_sale_cannot_edit'));
+            redirect('sales');
+        }
+        if ($did && ($existing_suspended_sale = $this->pos_model->getSuspendedSaleByID($did)) && $existing_suspended_sale->sale_mode == 'cost_sale' && !$this->Admin) {
+            $this->session->set_flashdata('error', lang('cost_sale_admin_only'));
+            redirect('pos');
+        }
         if($eid && !($this->Admin || $this->Barman)) {
             $this->session->set_flashdata('error', lang('access_denied'));
             redirect(isset($_SERVER["HTTP_REFERER"]) ? $_SERVER["HTTP_REFERER"] : 'pos');
@@ -45,8 +75,20 @@ class Pos extends MY_Controller {
         }
 
         $suspend = $this->input->post('suspend') ? TRUE : FALSE;
+        $sale_mode = $this->input->post('sale_mode') ? $this->input->post('sale_mode') : 'retail_sale';
+        if ($this->input->method() == 'post') {
+            $this->validateSaleMode($sale_mode);
+            if ($eid && $sale_mode == 'cost_sale') {
+                $this->session->set_flashdata('error', lang('cost_sale_cannot_edit'));
+                redirect('sales');
+            }
+        }
 
         $this->form_validation->set_rules('customer_id', lang("customer"), 'trim|required');
+        $this->form_validation->set_rules('sale_mode', lang('sale_mode'), 'trim|required|in_list[retail_sale,whole_sale,cost_sale]');
+        if ($sale_mode == 'cost_sale') {
+            $this->form_validation->set_rules('cost_sale_reason', lang('cost_sale_reason'), 'trim|required|max_length[255]');
+        }
 
         if ($this->form_validation->run() == true) {
 
@@ -58,14 +100,24 @@ class Pos extends MY_Controller {
             $date = $eid ? $this->input->post('date') : date('Y-m-d H:i:s');
             $customer_id = $this->input->post('customer_id');
             $customer_details = $this->pos_model->getCustomerByID($customer_id);
+            if (!$customer_details) {
+                $this->session->set_flashdata('error', lang('customer_not_found'));
+                redirect('pos');
+            }
             $customer = $customer_details->name;
             $note = $this->tec->clear_tags($this->input->post('spos_note'));
+            $cost_sale_reason = $sale_mode == 'cost_sale' ? trim($this->tec->clear_tags($this->input->post('cost_sale_reason'))) : NULL;
+            if ($sale_mode == 'cost_sale' && $cost_sale_reason === '') {
+                $this->session->set_flashdata('error', lang('cost_sale_reason_required'));
+                redirect('pos');
+            }
 
             $total = 0;
             $product_tax = 0;
             $order_tax = 0;
             $product_discount = 0;
             $order_discount = 0;
+            $sale_margin = 0;
             $percentage = '%';
             $i = isset($_POST['product_id']) ? sizeof($_POST['product_id']) : 0;
             for ($r = 0; $r < $i; $r++) {
@@ -80,8 +132,26 @@ class Pos extends MY_Controller {
                     if ($product_details) {
                         $product_name = $product_details->name;
                         $product_code = $product_details->code;
-                        $product_cost = $product_details->cost;
+                        $resolved_product_cost = $this->pos_model->getProductCost($product_details);
+                        $product_cost = $resolved_product_cost === FALSE ? $product_details->cost : $resolved_product_cost;
+                        $expected_price = $this->pos_model->getSalePrice($product_details, $sale_mode);
+                        if ($expected_price === FALSE || ($sale_mode == 'cost_sale' && $expected_price <= 0)) {
+                            $this->session->set_flashdata('error', lang('cost_price_unavailable').' ('.$product_name.')');
+                            redirect('pos');
+                        }
+                        if (abs($real_unit_price - $expected_price) > 0.0001) {
+                            $this->session->set_flashdata('error', lang('product_price_changed').' ('.$product_name.')');
+                            redirect('pos');
+                        }
+                        $real_unit_price = $this->tec->formatDecimal($expected_price, 4);
+                        if ($sale_mode == 'cost_sale') {
+                            $product_cost = $real_unit_price;
+                        }
                     } else {
+                        if ($sale_mode == 'cost_sale') {
+                            $this->session->set_flashdata('error', lang('cost_sale_requires_product'));
+                            redirect('pos');
+                        }
                         $product_name = $_POST['product_name'][$r];
                         $product_code = $_POST['product_code'][$r];
                         $product_cost = 0;
@@ -97,7 +167,7 @@ class Pos extends MY_Controller {
                                 redirect("pos");
                             }
                         } elseif ($product_details->type == 'combo') {
-                            $combo_items = $this->pos_model->getComboItemsByPID($product->id);
+                            $combo_items = $this->pos_model->getComboItemsByPID($product_details->id);
                             foreach ($combo_items as $combo_item) {
                                 $cpr = $this->site->getProductByID($combo_item->id);
                                 if ($cpr->quantity < $item_quantity) {
@@ -124,7 +194,18 @@ class Pos extends MY_Controller {
                             $pr_discount = $this->tec->formatDecimal($discount);
                         }
                     }
+                    if ($sale_mode == 'cost_sale' && abs($pr_discount) > 0.0001) {
+                        $this->session->set_flashdata('error', lang('cost_sale_discounts_not_allowed'));
+                        redirect('pos');
+                    }
                     $unit_price = $this->tec->formatDecimal(($unit_price - $pr_discount), 4);
+                    if ($sale_mode != 'cost_sale' && !$this->Admin && is_numeric($product_cost) && $product_cost > 0) {
+                        if ($unit_price <= $product_cost) {
+                            $this->session->set_flashdata('error', lang('sale_at_or_below_cost_admin_only').' ('.$product_name.')');
+                            redirect('pos');
+                        }
+                        $sale_margin += ($unit_price - $product_cost) * $item_quantity;
+                    }
                     $item_net_price = $unit_price;
                     $pr_item_discount = $this->tec->formatDecimal(($pr_discount * $item_quantity), 4);
                     $product_discount += $pr_item_discount;
@@ -187,6 +268,14 @@ class Pos extends MY_Controller {
             } else {
                 $order_discount_id = NULL;
             }
+            if ($sale_mode == 'cost_sale' && abs($order_discount) > 0.0001) {
+                $this->session->set_flashdata('error', lang('cost_sale_discounts_not_allowed'));
+                redirect('pos');
+            }
+            if (!$this->Admin && $order_discount > 0 && $sale_margin > 0 && $order_discount >= $sale_margin) {
+                $this->session->set_flashdata('error', lang('sale_at_or_below_cost_admin_only'));
+                redirect('pos');
+            }
             $total_discount = $this->tec->formatDecimal(($order_discount + $product_discount), 4);
 
             if($this->input->post('order_tax')) {
@@ -223,7 +312,10 @@ class Pos extends MY_Controller {
             }
 
             $data = array(
-                'sale_mode' => $this->input->post('sale_mode'),
+                'sale_mode' => $sale_mode,
+                'cost_sale_reason' => $cost_sale_reason,
+                'cost_sale_authorized_by' => $sale_mode == 'cost_sale' ? $this->session->userdata('user_id') : NULL,
+                'cost_sale_authorized_at' => $sale_mode == 'cost_sale' ? date('Y-m-d H:i:s') : NULL,
                 'date' => $date,
                 'customer_id' => $customer_id,
                 'customer_name' => $customer,
@@ -352,6 +444,10 @@ class Pos extends MY_Controller {
 
             if(isset($sid) && !empty($sid)) {
                 $suspended_sale = $this->pos_model->getSuspendedSaleByID($sid);
+                if ($suspended_sale->sale_mode == 'cost_sale' && !$this->Admin) {
+                    $this->session->set_flashdata('error', lang('cost_sale_admin_only'));
+                    redirect('pos');
+                }
                 $inv_items = $this->pos_model->getSuspendedSaleItems($sid);
                 krsort($inv_items);
                 $c = rand(100000, 9999999);
@@ -363,8 +459,9 @@ class Pos extends MY_Controller {
                         $row->code = $item->product_code;
                         $row->name = $item->product_name;
                         $row->tax = 0;
+                    } else {
+                        $row = $this->prepareProductForPos($row);
                     }
-                    $row->price = $item->unit_price;
                     $row->unit_price = $item->unit_price+($item->item_discount/$item->quantity)+($item->item_tax/$item->quantity);
                     $row->real_unit_price = $item->real_unit_price;
                     $row->discount = $item->discount;
@@ -380,6 +477,7 @@ class Pos extends MY_Controller {
                 $this->data['sid'] = $sid;
                 $this->data['suspend_sale'] = $suspended_sale;
                 $this->data['sale_mode'] = $suspended_sale->sale_mode;
+                $this->data['cost_sale_reason'] = $suspended_sale->cost_sale_reason;
                 $this->data['message'] = lang('suspended_sale_loaded');
             }
 
@@ -392,8 +490,9 @@ class Pos extends MY_Controller {
                     $row = $this->site->getProductByID($item->product_id);
                     if (!$row) {
                         $row = json_decode('{}');
+                    } else {
+                        $row = $this->prepareProductForPos($row);
                     }
-                    $row->price = $item->net_unit_price;
                     $row->unit_price = $item->unit_price;
                     $row->real_unit_price = $item->real_unit_price;
                     $row->discount = $item->discount;
@@ -415,12 +514,15 @@ class Pos extends MY_Controller {
                 $this->data['eid'] = $eid;
                 $this->data['sale'] = $sale;
                 $this->data['sale_mode'] = $sale->sale_mode;
+                $this->data['cost_sale_reason'] = $sale->cost_sale_reason;
                 $this->data['message'] = lang('sale_loaded');
             }
             $this->data['error'] = (validation_errors()) ? validation_errors() : $this->session->flashdata('error');
             $this->data['reference_note'] = isset($sid) && !empty($sid) ? $suspended_sale->hold_ref : (isset($eid) && !empty($eid) ? $sale->hold_ref : NULL);
             $this->data['sid'] = isset($sid) && !empty($sid) ? $sid : 0;
             $this->data['eid'] = isset($eid) && !empty($eid) ? $eid : 0;
+            $this->data['sale_mode'] = isset($this->data['sale_mode']) ? $this->data['sale_mode'] : 'retail_sale';
+            $this->data['cost_sale_reason'] = isset($this->data['cost_sale_reason']) ? $this->data['cost_sale_reason'] : NULL;
             $this->data['customers'] = $this->site->getAllCustomers();
             $this->data["tcp"] = $this->pos_model->products_count($this->Settings->default_category);
             $this->data['products'] = $this->ajaxproducts($this->Settings->default_category, 1);
@@ -469,12 +571,10 @@ class Pos extends MY_Controller {
         if ($this->input->get('code')) { $code = $this->input->get('code'); }
         $combo_items = FALSE;
         if($product = $this->pos_model->getProductByCode($code)) {
-            unset($product->cost, $product->details);
+            $product = $this->prepareProductForPos($product);
             $product->qty = 1;
             $product->comment = '';
             $product->discount = '0';
-            $product->price = $product->store_price > 0 ? $product->store_price : $product->price;
-            $product->ws_price = $product->store_ws_price > 0 ? $product->store_ws_price : $product->ws_price;
             $product->real_unit_price = $product->price;
             $product->real_unit_ws_price = $product->ws_price;
             $product->unit_price = $product->tax ? ($product->price+(($product->price*$product->tax)/100)) : $product->price;
@@ -495,11 +595,10 @@ class Pos extends MY_Controller {
         $rows = $this->pos_model->getProductNames($term);
         if ($rows) {
             foreach ($rows as $row) {
-                unset($row->cost, $row->details);
+                $row = $this->prepareProductForPos($row);
                 $row->qty = 1;
                 $row->comment = '';
                 $row->discount = '0';
-                $row->price = $row->store_price > 0 ? $row->store_price : $row->price;
                 $row->real_unit_price = $row->price;
                 $row->unit_price = $row->tax ? ($row->price+(($row->price*$row->tax)/100)) : $row->price;
                 $combo_items = FALSE;
@@ -964,9 +1063,15 @@ class Pos extends MY_Controller {
 
     function p($bo = 'order') {
 
+        $sale_mode = $this->input->post('sale_mode') ? $this->input->post('sale_mode') : 'retail_sale';
+        $this->validateSaleMode($sale_mode);
         $date = date('Y-m-d H:i:s');
         $customer_id = $this->input->post('customer_id');
         $customer_details = $this->pos_model->getCustomerByID($customer_id);
+        if (!$customer_details) {
+            $this->session->set_flashdata('error', lang('customer_not_found'));
+            redirect('pos');
+        }
         $customer = $customer_details->name;
         $note = $this->tec->clear_tags($this->input->post('spos_note'));
 
@@ -975,6 +1080,7 @@ class Pos extends MY_Controller {
         $order_tax = 0;
         $product_discount = 0;
         $order_discount = 0;
+        $sale_margin = 0;
         $percentage = '%';
         $i = isset($_POST['product_id']) ? sizeof($_POST['product_id']) : 0;
         for ($r = 0; $r < $i; $r++) {
@@ -990,8 +1096,26 @@ class Pos extends MY_Controller {
                 if ($product_details) {
                     $product_name = $product_details->name;
                     $product_code = $product_details->code;
-                    $product_cost = $product_details->cost;
+                    $resolved_product_cost = $this->pos_model->getProductCost($product_details);
+                    $product_cost = $resolved_product_cost === FALSE ? $product_details->cost : $resolved_product_cost;
+                    $expected_price = $this->pos_model->getSalePrice($product_details, $sale_mode);
+                    if ($expected_price === FALSE || ($sale_mode == 'cost_sale' && $expected_price <= 0)) {
+                        $this->session->set_flashdata('error', lang('cost_price_unavailable').' ('.$product_name.')');
+                        redirect('pos');
+                    }
+                    if (abs($real_unit_price - $expected_price) > 0.0001) {
+                        $this->session->set_flashdata('error', lang('product_price_changed').' ('.$product_name.')');
+                        redirect('pos');
+                    }
+                    $real_unit_price = $this->tec->formatDecimal($expected_price, 4);
+                    if ($sale_mode == 'cost_sale') {
+                        $product_cost = $real_unit_price;
+                    }
                 } else {
+                    if ($sale_mode == 'cost_sale') {
+                        $this->session->set_flashdata('error', lang('cost_sale_requires_product'));
+                        redirect('pos');
+                    }
                     $product_name = $_POST['product_name'][$r];
                     $product_code = $_POST['product_code'][$r];
                     $product_cost = 0;
@@ -1007,7 +1131,7 @@ class Pos extends MY_Controller {
                             redirect("pos");
                         }
                     } elseif ($product_details->type == 'combo') {
-                        $combo_items = $this->pos_model->getComboItemsByPID($product->id);
+                        $combo_items = $this->pos_model->getComboItemsByPID($product_details->id);
                         foreach ($combo_items as $combo_item) {
                             $cpr = $this->site->getProductByID($combo_item->id);
                             if ($cpr->quantity < $item_quantity) {
@@ -1034,7 +1158,18 @@ class Pos extends MY_Controller {
                         $pr_discount = $this->tec->formatDecimal($discount);
                     }
                 }
+                if ($sale_mode == 'cost_sale' && abs($pr_discount) > 0.0001) {
+                    $this->session->set_flashdata('error', lang('cost_sale_discounts_not_allowed'));
+                    redirect('pos');
+                }
                 $unit_price = $this->tec->formatDecimal(($unit_price - $pr_discount), 4);
+                if ($sale_mode != 'cost_sale' && !$this->Admin && is_numeric($product_cost) && $product_cost > 0) {
+                    if ($unit_price <= $product_cost) {
+                        $this->session->set_flashdata('error', lang('sale_at_or_below_cost_admin_only').' ('.$product_name.')');
+                        redirect('pos');
+                    }
+                    $sale_margin += ($unit_price - $product_cost) * $item_quantity;
+                }
                 $item_net_price = $unit_price;
                 $pr_item_discount = $this->tec->formatDecimal(($pr_discount * $item_quantity), 4);
                 $product_discount += $pr_item_discount;
@@ -1098,6 +1233,14 @@ class Pos extends MY_Controller {
         } else {
             $order_discount_id = NULL;
         }
+        if ($sale_mode == 'cost_sale' && abs($order_discount) > 0.0001) {
+            $this->session->set_flashdata('error', lang('cost_sale_discounts_not_allowed'));
+            redirect('pos');
+        }
+        if (!$this->Admin && $order_discount > 0 && $sale_margin > 0 && $order_discount >= $sale_margin) {
+            $this->session->set_flashdata('error', lang('sale_at_or_below_cost_admin_only'));
+            redirect('pos');
+        }
         $total_discount = $this->tec->formatDecimal(($order_discount + $product_discount), 4);
 
         if($this->input->post('order_tax')) {
@@ -1122,6 +1265,8 @@ class Pos extends MY_Controller {
         $rounding = $this->tec->formatDecimal(($round_total - $grand_total));
 
         $data = (object) array('date' => $date,
+            'sale_mode' => $sale_mode,
+            'cost_sale_reason' => $sale_mode == 'cost_sale' ? trim($this->tec->clear_tags($this->input->post('cost_sale_reason'))) : NULL,
             'customer_id' => $customer_id,
             'customer_name' => $customer,
             'total' => $this->tec->formatDecimal($total),

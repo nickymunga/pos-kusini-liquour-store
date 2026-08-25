@@ -9,7 +9,7 @@ class Pos_model extends CI_Model
 
     public function getProductNames($term, $limit = 10) {
         $store_id = $this->session->userdata('store_id');
-        $this->db->select("{$this->db->dbprefix('products')}.*, COALESCE(psq.quantity, 0) as quantity, COALESCE(psq.price, 0) as store_price")
+        $this->db->select("{$this->db->dbprefix('products')}.*, COALESCE(psq.quantity, 0) as quantity, COALESCE(psq.price, 0) as store_price, COALESCE(psq.ws_price, 0) as store_ws_price")
         ->join("( SELECT * from {$this->db->dbprefix('product_store_qty')} WHERE store_id = {$store_id}) psq", 'products.id=psq.product_id', 'left');
         if ($this->db->dbdriver == 'sqlite3') {
             $this->db->where("(name LIKE '%{$term}%' OR code LIKE '%{$term}%' OR  (name || ' (' || code || ')') LIKE '%{$term}%')");
@@ -505,6 +505,51 @@ class Pos_model extends CI_Model
             return $q->row();
           }
           return FALSE;
+    }
+
+    public function getSalePrice($product, $sale_mode) {
+        if (!$product) {
+            return FALSE;
+        }
+
+        if ($sale_mode == 'cost_sale') {
+            return $this->getProductCost($product);
+        }
+
+        if ($sale_mode == 'whole_sale') {
+            $price = isset($product->store_ws_price) && $product->store_ws_price > 0 ? $product->store_ws_price : $product->ws_price;
+        } else {
+            $price = isset($product->store_price) && $product->store_price > 0 ? $product->store_price : $product->price;
+        }
+
+        return is_numeric($price) && $price >= 0 ? (float) $price : FALSE;
+    }
+
+    public function getProductCost($product) {
+        if (!$product) {
+            return FALSE;
+        }
+
+        if ($product->type != 'combo') {
+            return is_numeric($product->cost) && $product->cost > 0 ? (float) $product->cost : FALSE;
+        }
+
+        $this->db->select($this->db->dbprefix('products') . '.cost as cost, ' . $this->db->dbprefix('combo_items') . '.quantity as quantity')
+            ->join('products', 'products.code=combo_items.item_code', 'left');
+        $q = $this->db->get_where('combo_items', array('product_id' => $product->id));
+        if ($q->num_rows() == 0) {
+            return FALSE;
+        }
+
+        $cost = 0;
+        foreach ($q->result() as $item) {
+            if (!is_numeric($item->cost) || $item->cost <= 0 || !is_numeric($item->quantity) || $item->quantity <= 0) {
+                return FALSE;
+            }
+            $cost += $item->cost * $item->quantity;
+        }
+
+        return $cost > 0 ? $cost : FALSE;
     }
 
     public function addSale($data, $items, $payment = array(), $did = NULL) {

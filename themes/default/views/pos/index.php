@@ -443,13 +443,25 @@
                                         <div class="form-group" style="margin-bottom:5px;">                                            
                                             <div class="input-group" style="width: 100%;">
                                                 <div class="input-group-addon no-print">
-                                                    <label class="input-group-text" for="sale_mode">Sale Mode:</label> 
+                                                    <label class="input-group-text" for="sale_mode"><?= lang('sale_mode'); ?>:</label>
                                                 </div>
-                                                <?= form_dropdown('sale_mode', ['retail_sale' => 'Retail Sale', 'whole_sale' => 'Whole Sale'], set_value('sale_mode', $sale_mode), 'id="sale_mode" data-placeholder="' . lang("select") . ' sale mode' . '" required="required" class="form-control select2" style="width:100%;position:absolute;" aria-describedby="sale_mode_label"'); ?>
+                                                <?php
+                                                $sale_modes = array('retail_sale' => lang('retail_sale'), 'whole_sale' => lang('whole_sale'));
+                                                if ($Admin) {
+                                                    $sale_modes['cost_sale'] = lang('cost_sale');
+                                                }
+                                                ?>
+                                                <?= form_dropdown('sale_mode', $sale_modes, set_value('sale_mode', $sale_mode), 'id="sale_mode" data-placeholder="' . lang("select") . ' ' . lang('sale_mode') . '" required="required" class="form-control select2" style="width:100%;position:absolute;" aria-describedby="sale_mode_label"'); ?>
                                                 
                                             </div>
                                             <div style="clear:both;"></div>
                                         </div>
+                                        <?php if ($Admin) { ?>
+                                        <div class="form-group" id="cost-sale-reason-group" style="display:none;margin-bottom:5px;">
+                                            <input type="text" name="cost_sale_reason" id="cost_sale_reason" maxlength="255" class="form-control kb-text" value="<?= html_escape($cost_sale_reason); ?>" placeholder="<?= lang('cost_sale_reason'); ?>" />
+                                            <p class="text-danger" style="margin:4px 0 0;"><?= lang('cost_sale_warning'); ?></p>
+                                        </div>
+                                        <?php } ?>
                                         <?php if ($eid && $Admin) { ?>
                                         <div class="form-group" style="margin-bottom:5px;">
                                             <?= form_input('date', set_value('date', $sale->date), 'id="date" required="required" class="form-control"'); ?>
@@ -1181,6 +1193,8 @@
     lang['order'] = '<?= lang('order'); ?>';
     lang['bill'] = '<?= lang('bill'); ?>';
     lang['merchant_copy'] = '<?= lang('merchant_copy'); ?>';
+    lang['cost_sale_discounts_not_allowed'] = '<?= lang('cost_sale_discounts_not_allowed'); ?>';
+    lang['cost_price_unavailable'] = '<?= lang('cost_price_unavailable'); ?>';
 
     $(document).ready(function() {
         <?php if ($this->session->userdata('rmspos')) { ?>
@@ -1189,6 +1203,7 @@
             if (get('spos_tax')) { remove('spos_tax'); }
             if (get('spos_note')) { remove('spos_note'); }
             if (get('spos_customer')) { remove('spos_customer'); }
+            if (get('spos_sale_mode')) { remove('spos_sale_mode'); }
             if (get('amount')) { remove('amount'); }
             <?php $this->tec->unset_data('rmspos'); } ?>
 
@@ -1198,6 +1213,7 @@
                 if (get('spos_tax')) { remove('spos_tax'); }
                 if (get('spos_note')) { remove('spos_note'); }
                 if (get('spos_customer')) { remove('spos_customer'); }
+                if (get('spos_sale_mode')) { remove('spos_sale_mode'); }
                 if (get('amount')) { remove('amount'); }
                 remove('rmspos');
             }
