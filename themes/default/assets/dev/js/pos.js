@@ -78,7 +78,13 @@ function loadItems() {
                 item_ds = item.row.discount,
                 item_code = item.row.code,
                 item_name = item.row.name.replace(/"/g, '&#034;').replace(/'/g, '&#039;');
-            var unit_price = parseFloat((sale_mode === 'whole_sale') ? item.row.ws_price : item.row.price);
+            var unit_price = parseFloat(
+                sale_mode === 'cost_sale'
+                    ? item.row.cost_price
+                    : sale_mode === 'whole_sale'
+                        ? item.row.ws_price
+                        : item.row.price
+            );
             //var unit_ws_price = parseFloat(item.row.real_unit_ws_price);
             var net_price = unit_price;
            // var net_ws_price = unit_ws_price;
@@ -86,7 +92,7 @@ function loadItems() {
             // var item_was_ordered = item.row.ordered ? item.row.ordered : 0;
             var item_was_ordered = 0;
 
-            var ds = item_ds ? item_ds : '0';
+            var ds = sale_mode === 'cost_sale' ? '0' : (item_ds ? item_ds : '0');
             var item_discount = formatDecimal(ds);
             if (ds.indexOf('%') !== -1) {
                 var pds = ds.split('%');
@@ -273,7 +279,7 @@ function loadItems() {
             }
         });
 
-        var ds = get('spos_discount') ? get('spos_discount') : $('#discount_val').val() ? $('#discount_val').val() : '0';
+        var ds = sale_mode === 'cost_sale' ? '0' : (get('spos_discount') ? get('spos_discount') : $('#discount_val').val() ? $('#discount_val').val() : '0');
         order_discount = parseFloat(ds);
         if (ds.indexOf('%') !== -1) {
             var pds = ds.split('%');
@@ -447,6 +453,9 @@ $(document).ready(function() {
         $('#nQuantity').val(item.row.qty);
         $('#nDiscount').val(ds);
         $('#nComment').val(item.row.comment);
+        var cost_sale = $('#sale_mode').val() === 'cost_sale';
+        $('#nPrice').prop('disabled', true);
+        $('#nDiscount').prop('disabled', cost_sale);
         $('#proModal').modal({ backdrop: 'static' });
     });
 
@@ -487,6 +496,10 @@ $(document).ready(function() {
     $(document).on('click', '#editItem', function() {
         var item_id = $('#item_id').val();
         var price = parseFloat($('#nPrice').val());
+        if ($('#sale_mode').val() === 'cost_sale') {
+            price = parseFloat(spositems[item_id].row.cost_price);
+            $('#nDiscount').val('0');
+        }
         if (!is_valid_discount($('#nDiscount').val())) {
             bootbox.alert(lang.unexpected_value);
             return false;
@@ -666,6 +679,10 @@ $(document).ready(function() {
     });
 
     $('#updateDiscount').click(function() {
+        if ($('#sale_mode').val() === 'cost_sale') {
+            bootbox.alert(lang.cost_sale_discounts_not_allowed);
+            return false;
+        }
         var ds = $('#get_ds').val() ? $('#get_ds').val() : '0';
         var apply_to = $('input[name=apply_to]:checked').val();
         if (ds.length != 0) {
@@ -703,6 +720,10 @@ $(document).ready(function() {
     });
 
     $('#add_discount').click(function() {
+        if ($('#sale_mode').val() === 'cost_sale') {
+            bootbox.alert(lang.cost_sale_discounts_not_allowed);
+            return false;
+        }
         var dval = $('#discount_val').val();
         $('#get_ds').val(dval);
         $('#dsModal').modal({ backdrop: 'static' });
@@ -1770,7 +1791,85 @@ $(document).ready(function() {
         );
     }
     
-    $('#sale_mode').on('change', function(){ console.log('reloading prices'); loadItems(); });
+    function refreshMissingCostPrices(items, callback) {
+        var pending = 0;
+        var unavailable = false;
+
+        $.each(items, function() {
+            var item = this;
+            if (item.row.cost_price && parseFloat(item.row.cost_price) > 0) {
+                return;
+            }
+
+            pending++;
+            $.ajax({
+                type: 'get',
+                url: base_url + 'pos/get_product/' + encodeURIComponent(item.row.code),
+                dataType: 'json',
+            })
+                .done(function(data) {
+                    if (data && data.row && data.row.cost_price && parseFloat(data.row.cost_price) > 0) {
+                        item.row.cost_price = data.row.cost_price;
+                    } else {
+                        unavailable = true;
+                    }
+                })
+                .fail(function() {
+                    unavailable = true;
+                })
+                .always(function() {
+                    pending--;
+                    if (pending === 0) {
+                        store('spositems', JSON.stringify(items));
+                        callback(!unavailable);
+                    }
+                });
+        });
+
+        if (pending === 0) {
+            callback(true);
+        }
+    }
+
+    function applySaleModeGuards() {
+        var cost_sale = $('#sale_mode').val() === 'cost_sale';
+        $('#cost-sale-reason-group').toggle(cost_sale);
+        $('#cost_sale_reason').prop('required', cost_sale);
+        $('#add_discount').toggleClass('disabled', cost_sale);
+
+        if (cost_sale) {
+            var missing_cost = false;
+            if (get('spositems')) {
+                spositems = JSON.parse(get('spositems'));
+                $.each(spositems, function() {
+                    this.row.discount = '0';
+                    if (!this.row.cost_price || parseFloat(this.row.cost_price) <= 0) {
+                        missing_cost = true;
+                    }
+                });
+                store('spositems', JSON.stringify(spositems));
+            }
+            remove('spos_discount');
+            $('#discount_val').val('0');
+            if (missing_cost) {
+                refreshMissingCostPrices(spositems, function(success) {
+                    if (!success) {
+                        bootbox.alert(lang.cost_price_unavailable);
+                        $('#sale_mode').val('retail_sale').trigger('change.select2');
+                        $('#cost-sale-reason-group').hide();
+                        $('#cost_sale_reason').prop('required', false);
+                        $('#add_discount').removeClass('disabled');
+                    }
+                    loadItems();
+                });
+                return;
+            }
+        }
+        loadItems();
+    }
+
+    $('#sale_mode').on('change', applySaleModeGuards);
+    applySaleModeGuards();
 });
 $.fn.focusToEnd = function() {
     return this.each(function() {

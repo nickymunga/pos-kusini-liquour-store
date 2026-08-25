@@ -88272,7 +88272,10 @@ CREATE TABLE `tec_sales` (
   `rounding` decimal(10,4) DEFAULT NULL,
   `store_id` int NOT NULL DEFAULT '1',
   `hold_ref` varchar(255) DEFAULT NULL,
-  `sale_mode` enum('whole_sale','retail_sale') DEFAULT 'retail_sale',
+  `sale_mode` enum('whole_sale','retail_sale','cost_sale') NOT NULL DEFAULT 'retail_sale',
+  `cost_sale_reason` varchar(255) DEFAULT NULL,
+  `cost_sale_authorized_by` int DEFAULT NULL,
+  `cost_sale_authorized_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=26688 DEFAULT CHARSET=utf8;
 
@@ -115161,6 +115164,7 @@ CREATE TABLE `tec_settings` (
 
 insert  into `tec_settings`(`setting_id`,`logo`,`site_name`,`tel`,`dateformat`,`timeformat`,`default_email`,`language`,`version`,`theme`,`timezone`,`protocol`,`smtp_host`,`smtp_user`,`smtp_pass`,`smtp_port`,`smtp_crypto`,`mmode`,`captcha`,`mailpath`,`currency_prefix`,`default_customer`,`default_tax_rate`,`rows_per_page`,`total_rows`,`header`,`footer`,`bsty`,`display_kb`,`default_category`,`default_discount`,`item_addition`,`barcode_symbology`,`pro_limit`,`decimals`,`thousands_sep`,`decimals_sep`,`focus_add_item`,`add_customer`,`toggle_category_slider`,`cancel_sale`,`suspend_sale`,`print_order`,`print_bill`,`finalize_sale`,`today_sale`,`open_hold_bills`,`close_register`,`java_applet`,`receipt_printer`,`pos_printers`,`cash_drawer_codes`,`char_per_line`,`rounding`,`pin_code`,`stripe`,`stripe_secret_key`,`stripe_publishable_key`,`purchase_code`,`envato_username`,`theme_style`,`after_sale_page`,`overselling`,`multi_store`,`qty_decimals`,`symbol`,`sac`,`display_symbol`,`remote_printing`,`printer`,`order_printers`,`auto_print`,`local_printers`,`rtl`,`print_img`) values 
 (1,'logo1.png','KUSINI LIQUOR STORE','0105292122','D j M Y','h:i A','kusiniliquors@gmail.com','english','4.0.29','default','Asia/Kuala_Lumpur','mail','pop.gmail.com','kusinitavern@gmail.com','','25','',0,0,NULL,'KES',1,'0',25,30,NULL,NULL,3,0,4,'0',1,NULL,24,2,',','.','ALT+F1','ALT+F2','ALT+F10','ALT+F5','ALT+F6','ALT+F11','ALT+F12','ALT+F8','Ctrl+F1','Ctrl+F2','ALT+F7',0,'','','',42,1,'1234',0,'','','59e211bc-6b9d-497f-8abe-a87efe812b97','bytebrain','black-light',1,1,1,2,'',0,0,0,2,'null',1,1,0,0);
+UPDATE `tec_settings` SET `version` = '4.0.30' WHERE `setting_id` = 1;
 
 /*Table structure for table `tec_stores` */
 
@@ -115305,7 +115309,10 @@ CREATE TABLE `tec_suspended_sales` (
   `note` varchar(1000) DEFAULT NULL,
   `hold_ref` varchar(255) DEFAULT NULL,
   `store_id` int NOT NULL DEFAULT '1',
-  `sale_mode` enum('whole_sale','retail_sale') DEFAULT 'retail_sale',
+  `sale_mode` enum('whole_sale','retail_sale','cost_sale') NOT NULL DEFAULT 'retail_sale',
+  `cost_sale_reason` varchar(255) DEFAULT NULL,
+  `cost_sale_authorized_by` int DEFAULT NULL,
+  `cost_sale_authorized_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=5030 DEFAULT CHARSET=utf8;
 
