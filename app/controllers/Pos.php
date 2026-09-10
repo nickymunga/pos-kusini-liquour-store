@@ -25,6 +25,26 @@ class Pos extends MY_Controller {
         }
     }
 
+    private function enforceSalePricePolicy($sale_mode, $unit_price, $product_cost, $product_name) {
+        if ($sale_mode == 'cost_sale' || !is_numeric($product_cost) || $product_cost <= 0 || $unit_price > $product_cost) {
+            return;
+        }
+
+        $message = $this->Admin ? lang('sale_at_or_below_cost_requires_cost_mode') : lang('sale_at_or_below_cost_admin_only');
+        $this->session->set_flashdata('error', $message.' ('.$product_name.')');
+        redirect('pos');
+    }
+
+    private function enforceOrderDiscountPolicy($sale_mode, $order_discount, $sale_margin) {
+        if ($sale_mode == 'cost_sale' || $order_discount <= 0 || $sale_margin <= 0 || $order_discount < $sale_margin) {
+            return;
+        }
+
+        $message = $this->Admin ? lang('sale_at_or_below_cost_requires_cost_mode') : lang('sale_at_or_below_cost_admin_only');
+        $this->session->set_flashdata('error', $message);
+        redirect('pos');
+    }
+
     private function prepareProductForPos($product) {
         $product->price = isset($product->store_price) && $product->store_price > 0 ? $product->store_price : $product->price;
         $product->ws_price = isset($product->store_ws_price) && $product->store_ws_price > 0 ? $product->store_ws_price : $product->ws_price;
@@ -122,7 +142,7 @@ class Pos extends MY_Controller {
             $i = isset($_POST['product_id']) ? sizeof($_POST['product_id']) : 0;
             for ($r = 0; $r < $i; $r++) {
                 $item_id = $_POST['product_id'][$r];
-                $real_unit_price = $this->tec->formatDecimal($_POST['real_unit_price'][$r]);
+                $real_unit_price = $this->tec->formatDecimal($_POST['real_unit_price'][$r], 4);
                 $item_quantity = $_POST['quantity'][$r];
                 $item_comment = $_POST['item_comment'][$r];
                 $item_discount = isset($_POST['product_discount'][$r]) ? $_POST['product_discount'][$r] : '0';
@@ -191,7 +211,7 @@ class Pos extends MY_Controller {
                             $pds = explode("%", $discount);
                             $pr_discount = $this->tec->formatDecimal((($unit_price * (Float)($pds[0])) / 100), 4);
                         } else {
-                            $pr_discount = $this->tec->formatDecimal($discount);
+                            $pr_discount = $this->tec->formatDecimal($discount, 4);
                         }
                     }
                     if ($sale_mode == 'cost_sale' && abs($pr_discount) > 0.0001) {
@@ -199,11 +219,8 @@ class Pos extends MY_Controller {
                         redirect('pos');
                     }
                     $unit_price = $this->tec->formatDecimal(($unit_price - $pr_discount), 4);
-                    if ($sale_mode != 'cost_sale' && !$this->Admin && is_numeric($product_cost) && $product_cost > 0) {
-                        if ($unit_price <= $product_cost) {
-                            $this->session->set_flashdata('error', lang('sale_at_or_below_cost_admin_only').' ('.$product_name.')');
-                            redirect('pos');
-                        }
+                    if ($sale_mode != 'cost_sale' && is_numeric($product_cost) && $product_cost > 0) {
+                        $this->enforceSalePricePolicy($sale_mode, $unit_price, $product_cost, $product_name);
                         $sale_margin += ($unit_price - $product_cost) * $item_quantity;
                     }
                     $item_net_price = $unit_price;
@@ -219,7 +236,7 @@ class Pos extends MY_Controller {
                             } else {
                                 $item_tax = $this->tec->formatDecimal(((($unit_price) * $product_details->tax) / (100 + $product_details->tax)), 4);
                                 $tax = $product_details->tax . "%";
-                                $item_net_price -= $item_tax;
+                                $item_net_price = $this->tec->formatDecimal($item_net_price - $item_tax, 4);
                             }
 
                             $pr_item_tax = $this->tec->formatDecimal(($item_tax * $item_quantity), 4);
@@ -263,7 +280,7 @@ class Pos extends MY_Controller {
                     $ods = explode("%", $order_discount_id);
                     $order_discount = $this->tec->formatDecimal(((($total + $product_tax) * (Float)($ods[0])) / 100), 4);
                 } else {
-                    $order_discount = $this->tec->formatDecimal($order_discount_id);
+                    $order_discount = $this->tec->formatDecimal($order_discount_id, 4);
                 }
             } else {
                 $order_discount_id = NULL;
@@ -272,10 +289,7 @@ class Pos extends MY_Controller {
                 $this->session->set_flashdata('error', lang('cost_sale_discounts_not_allowed'));
                 redirect('pos');
             }
-            if (!$this->Admin && $order_discount > 0 && $sale_margin > 0 && $order_discount >= $sale_margin) {
-                $this->session->set_flashdata('error', lang('sale_at_or_below_cost_admin_only'));
-                redirect('pos');
-            }
+            $this->enforceOrderDiscountPolicy($sale_mode, $order_discount, $sale_margin);
             $total_discount = $this->tec->formatDecimal(($order_discount + $product_discount), 4);
 
             if($this->input->post('order_tax')) {
@@ -285,7 +299,7 @@ class Pos extends MY_Controller {
                     $ots = explode("%", $order_tax_id);
                     $order_tax = $this->tec->formatDecimal(((($total + $product_tax - $order_discount) * (Float)($ots[0])) / 100), 4);
                 } else {
-                    $order_tax = $this->tec->formatDecimal($order_tax_id);
+                    $order_tax = $this->tec->formatDecimal($order_tax_id, 4);
                 }
 
             } else {
@@ -295,18 +309,18 @@ class Pos extends MY_Controller {
 
             $total_tax = $this->tec->formatDecimal(($product_tax + $order_tax), 4);
             $grand_total = $this->tec->formatDecimal(($total + $total_tax - $order_discount), 4);
-            $paid = $this->input->post('amount') ? $this->input->post('amount') : 0;
-            $round_total = $this->tec->roundNumber($grand_total, $this->Settings->rounding);
-            $rounding = $this->tec->formatDecimal(($round_total - $grand_total));
-            if (!$suspend && !isset($customer_details) && $this->tec->formatDecimal($paid) < $this->tec->formatDecimal($round_total)) {
+            $paid = $this->input->post('amount') ? $this->tec->formatDecimal($this->input->post('amount'), 4) : 0;
+            $round_total = $this->tec->formatDecimal($this->tec->roundNumber($grand_total, $this->Settings->rounding), 4);
+            $rounding = $this->tec->formatDecimal(($round_total - $grand_total), 4);
+            if (!$suspend && !isset($customer_details) && $paid < $round_total) {
                 $this->session->set_flashdata('error', lang('select_customer_for_due'));
                 redirect($_SERVER["HTTP_REFERER"]);
             }
             if (!$eid) {
                 $status = 'due';
-                if ($this->tec->formatDecimal($round_total) <= $this->tec->formatDecimal($paid)) {
+                if ($round_total <= $paid) {
                     $status = 'paid';
-                } elseif ($this->tec->formatDecimal($round_total) > $this->tec->formatDecimal($paid) && $paid > 0) {
+                } elseif ($round_total > $paid && $paid > 0) {
                     $status = 'partial';
                 }
             }
@@ -344,6 +358,8 @@ class Pos extends MY_Controller {
             }
 
             if (!$eid && !$suspend && $paid) {
+                $amount = $this->tec->formatDecimal(min($paid, $round_total), 4);
+                $balance_amount = $this->tec->formatDecimal(max($paid - $round_total, 0), 4);
                 if ($this->input->post('paying_gift_card_no')) {
                     $gc = $this->pos_model->getGiftCardByNO($this->input->post('paying_gift_card_no'));
                     if (!$gc || $gc->balance < $amount) {
@@ -351,7 +367,6 @@ class Pos extends MY_Controller {
                         redirect("pos");
                     }
                 }
-                $amount = $this->tec->formatDecimal(($paid > $grand_total ? ($paid - $this->input->post('balance_amount')) : $paid), 4);
                 $payment = array(
                     'date' => $date,
                     'amount' => $amount,
@@ -368,8 +383,8 @@ class Pos extends MY_Controller {
                     'created_by' => $this->session->userdata('user_id'),
                     'store_id' => $this->session->userdata('store_id'),
                     'note' => $this->input->post('payment_note'),
-                    'pos_paid' => $this->tec->formatDecimal($this->input->post('amount'), 4),
-                    'pos_balance' => $this->tec->formatDecimal($this->input->post('balance_amount'), 4)
+                    'pos_paid' => $paid,
+                    'pos_balance' => $balance_amount
                     );
                 $data['paid'] = $amount;
 
@@ -820,6 +835,7 @@ class Pos extends MY_Controller {
         $this->data['modal'] = $noprint ? true : false;
         $this->data['payments'] = $this->pos_model->getAllSalePayments($sale_id);
         $this->data['created_by'] = $this->site->getUser($inv->created_by);
+        $this->data['cost_sale_authorized_by'] = $inv->cost_sale_authorized_by ? $this->site->getUser($inv->cost_sale_authorized_by) : FALSE;
         $this->data['printer'] = $this->site->getPrinterByID($this->Settings->printer);
         $this->data['store'] = $this->site->getStoreByID($inv->store_id);
         $this->data['page_title'] = lang("invoice");
@@ -1074,6 +1090,11 @@ class Pos extends MY_Controller {
         }
         $customer = $customer_details->name;
         $note = $this->tec->clear_tags($this->input->post('spos_note'));
+        $cost_sale_reason = $sale_mode == 'cost_sale' ? trim($this->tec->clear_tags($this->input->post('cost_sale_reason'))) : NULL;
+        if ($sale_mode == 'cost_sale' && $cost_sale_reason === '') {
+            $this->session->set_flashdata('error', lang('cost_sale_reason_required'));
+            redirect('pos');
+        }
 
         $total = 0;
         $product_tax = 0;
@@ -1085,7 +1106,7 @@ class Pos extends MY_Controller {
         $i = isset($_POST['product_id']) ? sizeof($_POST['product_id']) : 0;
         for ($r = 0; $r < $i; $r++) {
             $item_id = $_POST['product_id'][$r];
-            $real_unit_price = $this->tec->formatDecimal($_POST['real_unit_price'][$r]);
+            $real_unit_price = $this->tec->formatDecimal($_POST['real_unit_price'][$r], 4);
             $item_quantity = $_POST['quantity'][$r];
             $item_comment = $_POST['item_comment'][$r];
             $item_ordered = $_POST['item_was_ordered'][$r];
@@ -1155,7 +1176,7 @@ class Pos extends MY_Controller {
                         $pds = explode("%", $discount);
                         $pr_discount = $this->tec->formatDecimal((($unit_price * (Float)($pds[0])) / 100), 4);
                     } else {
-                        $pr_discount = $this->tec->formatDecimal($discount);
+                        $pr_discount = $this->tec->formatDecimal($discount, 4);
                     }
                 }
                 if ($sale_mode == 'cost_sale' && abs($pr_discount) > 0.0001) {
@@ -1163,11 +1184,8 @@ class Pos extends MY_Controller {
                     redirect('pos');
                 }
                 $unit_price = $this->tec->formatDecimal(($unit_price - $pr_discount), 4);
-                if ($sale_mode != 'cost_sale' && !$this->Admin && is_numeric($product_cost) && $product_cost > 0) {
-                    if ($unit_price <= $product_cost) {
-                        $this->session->set_flashdata('error', lang('sale_at_or_below_cost_admin_only').' ('.$product_name.')');
-                        redirect('pos');
-                    }
+                if ($sale_mode != 'cost_sale' && is_numeric($product_cost) && $product_cost > 0) {
+                    $this->enforceSalePricePolicy($sale_mode, $unit_price, $product_cost, $product_name);
                     $sale_margin += ($unit_price - $product_cost) * $item_quantity;
                 }
                 $item_net_price = $unit_price;
@@ -1183,7 +1201,7 @@ class Pos extends MY_Controller {
                     } else {
                         $item_tax = $this->tec->formatDecimal(((($unit_price) * $product_details->tax) / (100 + $product_details->tax)), 4);
                         $tax = $product_details->tax . "%";
-                        $item_net_price -= $item_tax;
+                        $item_net_price = $this->tec->formatDecimal($item_net_price - $item_tax, 4);
                     }
 
                     $pr_item_tax = $this->tec->formatDecimal(($item_tax * $item_quantity), 4);
@@ -1191,7 +1209,7 @@ class Pos extends MY_Controller {
                 }
 
                 $product_tax += $pr_item_tax;
-                $subtotal = (($item_net_price * $item_quantity) + $pr_item_tax);
+                $subtotal = $this->tec->formatDecimal((($item_net_price * $item_quantity) + $pr_item_tax), 4);
 
                 $products[] = (object) array(
                     'product_id' => $item_id,
@@ -1211,7 +1229,7 @@ class Pos extends MY_Controller {
                     'ordered' => $item_ordered,
                     );
 
-                $total += $item_net_price * $item_quantity;
+                $total += $this->tec->formatDecimal($item_net_price * $item_quantity, 4);
 
             }
         }
@@ -1228,7 +1246,7 @@ class Pos extends MY_Controller {
                 $ods = explode("%", $order_discount_id);
                 $order_discount = $this->tec->formatDecimal(((($total + $product_tax) * (Float)($ods[0])) / 100), 4);
             } else {
-                $order_discount = $this->tec->formatDecimal($order_discount_id);
+                $order_discount = $this->tec->formatDecimal($order_discount_id, 4);
             }
         } else {
             $order_discount_id = NULL;
@@ -1237,10 +1255,7 @@ class Pos extends MY_Controller {
             $this->session->set_flashdata('error', lang('cost_sale_discounts_not_allowed'));
             redirect('pos');
         }
-        if (!$this->Admin && $order_discount > 0 && $sale_margin > 0 && $order_discount >= $sale_margin) {
-            $this->session->set_flashdata('error', lang('sale_at_or_below_cost_admin_only'));
-            redirect('pos');
-        }
+        $this->enforceOrderDiscountPolicy($sale_mode, $order_discount, $sale_margin);
         $total_discount = $this->tec->formatDecimal(($order_discount + $product_discount), 4);
 
         if($this->input->post('order_tax')) {
@@ -1250,7 +1265,7 @@ class Pos extends MY_Controller {
                 $ots = explode("%", $order_tax_id);
                 $order_tax = $this->tec->formatDecimal(((($total + $product_tax - $order_discount) * (Float)($ots[0])) / 100), 4);
             } else {
-                $order_tax = $this->tec->formatDecimal($order_tax_id);
+                $order_tax = $this->tec->formatDecimal($order_tax_id, 4);
             }
 
         } else {
@@ -1259,17 +1274,17 @@ class Pos extends MY_Controller {
         }
 
         $total_tax = $this->tec->formatDecimal(($product_tax + $order_tax), 4);
-        $grand_total = $this->tec->formatDecimal(($this->tec->formatDecimal($total) + $total_tax - $order_discount), 4);
+        $grand_total = $this->tec->formatDecimal(($total + $total_tax - $order_discount), 4);
         $paid = 0;
-        $round_total = $this->tec->roundNumber($grand_total, $this->Settings->rounding);
-        $rounding = $this->tec->formatDecimal(($round_total - $grand_total));
+        $round_total = $this->tec->formatDecimal($this->tec->roundNumber($grand_total, $this->Settings->rounding), 4);
+        $rounding = $this->tec->formatDecimal(($round_total - $grand_total), 4);
 
         $data = (object) array('date' => $date,
             'sale_mode' => $sale_mode,
-            'cost_sale_reason' => $sale_mode == 'cost_sale' ? trim($this->tec->clear_tags($this->input->post('cost_sale_reason'))) : NULL,
+            'cost_sale_reason' => $cost_sale_reason,
             'customer_id' => $customer_id,
             'customer_name' => $customer,
-            'total' => $this->tec->formatDecimal($total),
+            'total' => $this->tec->formatDecimal($total, 4),
             'product_discount' => $this->tec->formatDecimal($product_discount, 4),
             'order_discount_id' => $order_discount_id,
             'order_discount' => $order_discount,

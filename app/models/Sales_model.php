@@ -117,7 +117,9 @@ class Sales_model extends CI_Model
                 $paid += $payment->amount;
             }
         }
-        $status = $paid <= 0 ? 'due' : ($sale->grand_total <= $paid ? 'paid' : 'partial');
+        $paid = round($paid, 4);
+        $payable = round($sale->grand_total + (is_numeric($sale->rounding) ? $sale->rounding : 0), 4);
+        $status = $paid <= 0 ? 'due' : ($payable <= $paid ? 'paid' : 'partial');
         if ($this->db->update('sales', array('paid' => $paid, 'status' => $status), array('id' => $id))) {
             return true;
         }

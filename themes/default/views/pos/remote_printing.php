@@ -2,10 +2,8 @@
 
 <?php
 if ($Settings->remote_printing == 2) {
-    if ($Settings->rounding) {
-        $round_total = $this->tec->roundNumber($inv->grand_total, $Settings->rounding);
-        $rounding = $this->tec->formatDecimal($round_total - $inv->grand_total);
-    }
+    $rounding = $this->tec->formatDecimal(is_numeric($inv->rounding) ? $inv->rounding : 0, 4);
+    $round_total = $this->tec->formatDecimal($inv->grand_total + $rounding, 4);
     ?>
 
     <script type="text/javascript">
@@ -56,7 +54,7 @@ if ($Settings->remote_printing == 2) {
                 receipt.totals += "<?= printLine(lang("discount") . ": " . $this->tec->formatMoney($inv->total_discount), $printer->char_per_line); ?>" + "\n";
                 <?php
             }
-            if ($Settings->rounding) { ?>
+            if (abs($rounding) >= 0.0001) { ?>
                 receipt.totals += "<?= printLine(lang("rounding") . ": " . $this->tec->formatMoney($rounding), $printer->char_per_line); ?>" + "\n";
                 receipt.totals += "<?= printLine(lang("grand_total") . ": " . $this->tec->formatMoney($inv->grand_total + $rounding), $printer->char_per_line); ?>" + "\n";
                 <?php
@@ -64,9 +62,9 @@ if ($Settings->remote_printing == 2) {
                 receipt.totals += "<?= printLine(lang("grand_total") . ": " . $this->tec->formatMoney($inv->grand_total), $printer->char_per_line); ?>" + "\n";
                 <?php
             }
-            if ($inv->paid < $inv->grand_total) { ?>
+            if ($inv->paid < $round_total) { ?>
                 receipt.totals += "<?= printLine(lang("paid_amount") . ": " . $this->tec->formatMoney($inv->paid), $printer->char_per_line); ?>" + "\n";
-                receipt.totals += "<?= printLine(lang("due_amount") . ": " . $this->tec->formatMoney($inv->grand_total-$inv->paid), $printer->char_per_line); ?>" + "\n\n";
+                receipt.totals += "<?= printLine(lang("due_amount") . ": " . $this->tec->formatMoney($round_total - $inv->paid), $printer->char_per_line); ?>" + "\n\n";
                 <?php
             } ?>
 

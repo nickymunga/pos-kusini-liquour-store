@@ -78,6 +78,15 @@ if ($modal) {
                                     <?= lang('customer') . ': ' . $inv->customer_name; ?> <br>
                                     <?= lang('sales_person') . ': ' . $created_by->first_name . ' ' . $created_by->last_name; ?> <br>
                                 </p>
+                                <?php if ($Admin && $modal && $inv->sale_mode == 'cost_sale') { ?>
+                                <div class="alert alert-warning no-print">
+                                    <strong><?= lang('cost_sale'); ?></strong><br>
+                                    <?= lang('cost_sale_reason'); ?>: <?= html_escape($inv->cost_sale_reason); ?><br>
+                                    <?= lang('cost_sale_authorized_by'); ?>:
+                                    <?= $cost_sale_authorized_by ? html_escape($cost_sale_authorized_by->first_name . ' ' . $cost_sale_authorized_by->last_name) : '-'; ?><br>
+                                    <?= lang('cost_sale_authorized_at'); ?>: <?= $this->tec->hrld($inv->cost_sale_authorized_at); ?>
+                                </div>
+                                <?php } ?>
                                 <div style="clear:both;"></div>
                                 <table class="table table-striped table-condensed">
                                     <thead>
@@ -112,9 +121,9 @@ if ($modal) {
                                             echo '<tr><th colspan="2">' . lang('order_discount') . '</th><th colspan="2" class="text-right">' . $this->tec->formatMoney($inv->total_discount) . '</th></tr>';
                                         }
 
-                                        if ($Settings->rounding) {
-                                            $round_total = $this->tec->roundNumber($inv->grand_total, $Settings->rounding);
-                                            $rounding    = $this->tec->formatDecimal($round_total - $inv->grand_total); ?>
+                                        $rounding = $this->tec->formatDecimal(is_numeric($inv->rounding) ? $inv->rounding : 0, 4);
+                                        $round_total = $this->tec->formatDecimal($inv->grand_total + $rounding, 4);
+                                        if (abs($rounding) >= 0.0001) { ?>
                                             <tr>
                                                 <th colspan="2"><?= lang('rounding'); ?></th>
                                                 <th colspan="2" class="text-right"><?= $this->tec->formatMoney($rounding); ?></th>
@@ -125,7 +134,7 @@ if ($modal) {
                                             </tr>
                                             <?php
                                         } else {
-                                            $round_total = $inv->grand_total; ?>
+                                            ?>
                                             <tr>
                                                 <th colspan="2"><?= lang('grand_total'); ?></th>
                                                 <th colspan="2" class="text-right"><?= $this->tec->formatMoney($inv->grand_total); ?></th>
@@ -139,7 +148,7 @@ if ($modal) {
                                         </tr>
                                         <tr>
                                             <th colspan="2"><?= lang('due_amount'); ?></th>
-                                            <th colspan="2" class="text-right"><?= $this->tec->formatMoney($inv->grand_total - $inv->paid); ?></th>
+                                            <th colspan="2" class="text-right"><?= $this->tec->formatMoney($round_total - $inv->paid); ?></th>
                                         </tr>
                                         <?php } ?>
                                     </tfoot>

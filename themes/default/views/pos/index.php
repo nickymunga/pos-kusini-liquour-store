@@ -485,7 +485,7 @@
                                                     <thead>
                                                         <tr class="success">
                                                             <th><?=lang('product')?></th>
-                                                            <th style="width: 15%;text-align:center;"><?=lang('price')?></th>
+                                                            <th class="sale-price-label" style="width: 15%;text-align:center;"><?=lang('price')?></th>
                                                             <th style="width: 15%;text-align:center;"><?=lang('qty')?></th>
                                                             <th style="width: 20%;text-align:center;"><?=lang('subtotal')?></th>
                                                             <th style="width: 20px;" class="satu"><i class="fa fa-trash-o"></i></th>
@@ -497,7 +497,7 @@
                                                 <thead>
                                                     <tr class="success">
                                                         <th><?=lang('product')?></th>
-                                                        <th style="width: 15%;text-align:center;"><?=lang('price')?></th>
+                                                        <th class="sale-price-label" style="width: 15%;text-align:center;"><?=lang('price')?></th>
                                                         <th style="width: 15%;text-align:center;"><?=lang('qty')?></th>
                                                         <th style="width: 20%;text-align:center;"><?=lang('subtotal')?></th>
                                                         <th style="width: 20px;" class="satu"><i class="fa fa-trash-o"></i></th>
@@ -1195,6 +1195,9 @@
     lang['merchant_copy'] = '<?= lang('merchant_copy'); ?>';
     lang['cost_sale_discounts_not_allowed'] = '<?= lang('cost_sale_discounts_not_allowed'); ?>';
     lang['cost_price_unavailable'] = '<?= lang('cost_price_unavailable'); ?>';
+    lang['retail_price_header'] = '<?= lang('price'); ?>';
+    lang['wholesale_price_header'] = '<?= lang('ws_price_header'); ?>';
+    lang['cost_price_header'] = '<?= lang('cost'); ?>';
 
     $(document).ready(function() {
         <?php if ($this->session->userdata('rmspos')) { ?>
@@ -1204,6 +1207,7 @@
             if (get('spos_note')) { remove('spos_note'); }
             if (get('spos_customer')) { remove('spos_customer'); }
             if (get('spos_sale_mode')) { remove('spos_sale_mode'); }
+            if (get('spos_cost_sale_reason')) { remove('spos_cost_sale_reason'); }
             if (get('amount')) { remove('amount'); }
             <?php $this->tec->unset_data('rmspos'); } ?>
 
@@ -1214,6 +1218,7 @@
                 if (get('spos_note')) { remove('spos_note'); }
                 if (get('spos_customer')) { remove('spos_customer'); }
                 if (get('spos_sale_mode')) { remove('spos_sale_mode'); }
+                if (get('spos_cost_sale_reason')) { remove('spos_cost_sale_reason'); }
                 if (get('amount')) { remove('amount'); }
                 remove('rmspos');
             }
@@ -1224,6 +1229,7 @@
                 store('spos_tax', '<?=$suspend_sale->order_tax_id;?>');
                 store('spos_customer', '<?=$suspend_sale->customer_id;?>');
                 store('spos_sale_mode','<?=$suspend_sale->sale_mode;?>');
+                store('spos_cost_sale_reason', <?= json_encode($suspend_sale->cost_sale_reason ?: ''); ?>);
                 $('#spos_customer').select2().select2('val', '<?=$suspend_sale->customer_id;?>');
                 store('rmspos', '1');
                 $('#tax_val').val('<?=$suspend_sale->order_tax_id;?>');
@@ -1235,6 +1241,7 @@
                     store('spos_tax', '<?=$sale->order_tax_id;?>');
                     store('spos_customer', '<?=$sale->customer_id;?>');                    
                     store('spos_sale_mode','<?=$sale->sale_mode;?>');
+                    store('spos_cost_sale_reason', <?= json_encode($sale->cost_sale_reason ?: ''); ?>);
                     store('sale_date', '<?=$sale->date;?>');
                     $('#spos_customer').select2().select2('val', '<?=$sale->customer_id;?>');
                     $('#date').val('<?=$sale->date;?>');
@@ -1249,6 +1256,15 @@
                         if (! get('spos_tax')) {
                             store('spos_tax', '<?=$Settings->default_tax_rate;?>');
                             $('#tax_val').val('<?=$Settings->default_tax_rate;?>');
+                        }
+                        var saved_sale_mode = get('spos_sale_mode');
+                        if ($.inArray(saved_sale_mode, ['retail_sale', 'whole_sale', 'cost_sale']) !== -1 && $('#sale_mode option[value="' + saved_sale_mode + '"]').length) {
+                            $('#sale_mode').val(saved_sale_mode).trigger('change.select2');
+                        } else {
+                            store('spos_sale_mode', $('#sale_mode').val());
+                        }
+                        if (get('spos_cost_sale_reason')) {
+                            $('#cost_sale_reason').val(get('spos_cost_sale_reason'));
                         }
                         <?php } ?>
 

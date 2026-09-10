@@ -1,4 +1,8 @@
 <?php (defined('BASEPATH')) OR exit('No direct script access allowed'); ?>
+<?php
+$rounding = is_numeric($inv->rounding) ? $inv->rounding : 0;
+$amount_due = $this->tec->formatDecimal(($inv->grand_total + $rounding) - $inv->paid, 4);
+?>
 
 <div class="modal-dialog">
     <div class="modal-content">
@@ -40,7 +44,7 @@
                                     <div class="form-group">
                                         <?= lang("amount", "amount"); ?>
                                         <input name="amount-paid" type="text" id="amount"
-                                        value="<?= ($inv->grand_total - $inv->paid) > 0 ? $this->tec->formatDecimal($inv->grand_total - $inv->paid) : 0; ?>"
+                                        value="<?= $amount_due > 0 ? $amount_due : 0; ?>"
                                         class="pa form-control kb-pad amount" required="required"/>
                                     </div>
                                 </div>
@@ -199,7 +203,7 @@
                             bootbox.alert('<?= lang('incorrect_gift_card'); ?>');
                         } else {
                             $('#gc_details').html('<?= lang('card_no'); ?>: ' + data.card_no + '<br><?= lang('value'); ?>: ' + data.value + '<?= lang('balance'); ?>: ' + data.balance);
-                            var g_total = <?= $this->tec->formatDecimal($inv->grand_total - $inv->paid); ?>;
+                            var g_total = <?= json_encode($amount_due > 0 ? (float) $amount_due : 0); ?>;
                             $('#amount').val((g_total > data.balance) ? data.balance : g_total).change().focus();
                         }
                     }
@@ -286,4 +290,3 @@
         });
     });
 </script>
-
