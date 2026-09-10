@@ -127,9 +127,9 @@ class Reports_model extends CI_Model
 
     public function getDailySales($year, $month) {
         if ($this->db->dbdriver == 'sqlite3') {
-            $this->db->select("strftime('%d', date) AS date, COALESCE(sum(product_tax), 0) as product_tax, COALESCE(sum(order_tax), 0) as order_tax, COALESCE(sum(total), 0) as total, COALESCE(sum(grand_total), 0) as grand_total, COALESCE(sum(total_tax), 0) as total_tax, COALESCE(sum(rounding), 0) as rounding, COALESCE(sum(total_discount), 0) as discount, COALESCE(sum(paid), 0) as paid", FALSE)->group_by("strftime('%d', date)");
+            $this->db->select("strftime('%d', date) AS date, COALESCE(sum(product_tax), 0) as product_tax, COALESCE(sum(order_tax), 0) as order_tax, COALESCE(sum(total), 0) as total, COALESCE(sum(grand_total + COALESCE(rounding, 0)), 0) as grand_total, COALESCE(sum(total_tax), 0) as total_tax, COALESCE(sum(total_discount), 0) as discount, COALESCE(sum(paid), 0) as paid", FALSE)->group_by("strftime('%d', date)");
         } else {
-            $this->db->select("DATE_FORMAT(date,  '%d') AS date, COALESCE(sum(product_tax), 0) as product_tax, COALESCE(sum(order_tax), 0) as order_tax, COALESCE(sum(total), 0) as total, COALESCE(sum(grand_total), 0) as grand_total, COALESCE(sum(total_tax), 0) as total_tax, COALESCE(sum(rounding), 0) as rounding, COALESCE(sum(total_discount), 0) as discount, COALESCE(sum(paid), 0) as paid", FALSE)->group_by("DATE_FORMAT(date, '%d')");
+            $this->db->select("DATE_FORMAT(date,  '%d') AS date, COALESCE(sum(product_tax), 0) as product_tax, COALESCE(sum(order_tax), 0) as order_tax, COALESCE(sum(total), 0) as total, COALESCE(sum(grand_total + COALESCE(rounding, 0)), 0) as grand_total, COALESCE(sum(total_tax), 0) as total_tax, COALESCE(sum(total_discount), 0) as discount, COALESCE(sum(paid), 0) as paid", FALSE)->group_by("DATE_FORMAT(date, '%d')");
         }
         $this->db->like('date', "{$year}-{$month}", 'after');
         if ($this->session->userdata('store_id')) {
@@ -148,11 +148,11 @@ class Reports_model extends CI_Model
 
     public function getMonthlySales($year) {
         if ($this->db->dbdriver == 'sqlite3') {
-            $this->db->select("strftime('%m', date) AS date, COALESCE(sum(product_tax), 0) as product_tax, COALESCE(sum(order_tax), 0) as order_tax, COALESCE(sum(total), 0) as total, COALESCE(sum(grand_total), 0) as grand_total, COALESCE(sum(total_tax), 0) as tax, COALESCE(sum(total_discount), 0) as discount, COALESCE(sum(paid), 0) as paid", FALSE)
+            $this->db->select("strftime('%m', date) AS date, COALESCE(sum(product_tax), 0) as product_tax, COALESCE(sum(order_tax), 0) as order_tax, COALESCE(sum(total), 0) as total, COALESCE(sum(grand_total + COALESCE(rounding, 0)), 0) as grand_total, COALESCE(sum(total_tax), 0) as tax, COALESCE(sum(total_discount), 0) as discount, COALESCE(sum(paid), 0) as paid", FALSE)
             ->group_by("strftime('%m', date)")
             ->order_by("strftime('%m', date) ASC");
         } else {
-            $this->db->select("DATE_FORMAT( date,  '%m' ) AS date, COALESCE(sum(product_tax), 0) as product_tax, COALESCE(sum(order_tax), 0) as order_tax, COALESCE(sum(total), 0) as total, COALESCE(sum(grand_total), 0) as grand_total, COALESCE(sum(total_tax), 0) as tax, COALESCE(sum(total_discount), 0) as discount, COALESCE(sum(paid), 0) as paid", FALSE)
+            $this->db->select("DATE_FORMAT( date,  '%m' ) AS date, COALESCE(sum(product_tax), 0) as product_tax, COALESCE(sum(order_tax), 0) as order_tax, COALESCE(sum(total), 0) as total, COALESCE(sum(grand_total + COALESCE(rounding, 0)), 0) as grand_total, COALESCE(sum(total_tax), 0) as tax, COALESCE(sum(total_discount), 0) as discount, COALESCE(sum(paid), 0) as paid", FALSE)
             ->group_by("DATE_FORMAT(date, '%m')")
             ->order_by("DATE_FORMAT(date, '%m') ASC");
         }
@@ -172,7 +172,7 @@ class Reports_model extends CI_Model
     }
 
     public function getTotalCustomerSales($customer_id, $user = NULL, $start_date = NULL, $end_date = NULL) {
-        $this->db->select('COUNT(id) as number, sum(grand_total) as amount, sum(paid) as paid');
+        $this->db->select('COUNT(id) as number, sum(grand_total + COALESCE(rounding, 0)) as amount, sum(paid) as paid', FALSE);
         if ($start_date && $end_date) {
             $this->db->where('date >=', $start_date);
             $this->db->where('date <=', $end_date);
@@ -206,7 +206,7 @@ class Reports_model extends CI_Model
     }
 
     public function getTotalSalesValueforCustomer($customer_id, $user = NULL, $start_date = NULL, $end_date = NULL) {
-        $this->db->select('sum(grand_total) as total');
+        $this->db->select('sum(grand_total + COALESCE(rounding, 0)) as total', FALSE);
         if($start_date && $end_date) {
             $this->db->where('date >=', $start_date);
             $this->db->where('date <=', $end_date);

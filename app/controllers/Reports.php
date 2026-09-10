@@ -76,7 +76,7 @@ class Reports extends MY_Controller
                 "</td><td style='text-align:right;'>{$this->tec->formatMoney($sale->discount)}</td></tr><tr><td class='violet'>".lang('grand_total').
                 "</td><td style='text-align:right;' class='violet'>{$this->tec->formatMoney($sale->grand_total)}</td></tr><tr><td class='green'>".lang('paid').
                 "</td><td style='text-align:right;' class='green'>{$this->tec->formatMoney($sale->paid)}</td></tr><tr><td class='orange'>".lang('balance').
-                "</td><td style='text-align:right;' class='orange'>{$this->tec->formatMoney(($sale->grand_total+$sale->rounding) - $sale->paid)}</td></tr></table>";
+                "</td><td style='text-align:right;' class='orange'>{$this->tec->formatMoney($sale->grand_total - $sale->paid)}</td></tr></table>";
             }
         } else {
             $daily_sale = array();
@@ -138,10 +138,11 @@ class Reports extends MY_Controller
         $start_date = $this->input->get('start_date') ? $this->input->get('start_date') : NULL;
         $end_date = $this->input->get('end_date') ? $this->input->get('end_date') : NULL;
         $user = $this->input->get('user') ? $this->input->get('user') : NULL;
+        $sale_mode = $this->input->get('sale_mode') ? $this->input->get('sale_mode') : NULL;
 
         $this->load->library('datatables');
         $this->datatables
-        ->select("id, date, customer_name, total, total_tax, total_discount, grand_total, paid, (grand_total-paid) as balance, status")
+        ->select("id, date, customer_name, total, total_tax, total_discount, (grand_total + COALESCE(rounding, 0)) as grand_total, paid, ((grand_total + COALESCE(rounding, 0)) - paid) as balance, sale_mode, status")
         ->from('sales');
         if ($this->session->userdata('store_id')) {
             $this->datatables->where('store_id', $this->session->userdata('store_id'));
@@ -149,6 +150,7 @@ class Reports extends MY_Controller
         $this->datatables->unset_column('id');
         if($customer) { $this->datatables->where('customer_id', $customer); }
         if($user) { $this->datatables->where('created_by', $user); }
+        if($sale_mode) { $this->datatables->where('sale_mode', $sale_mode); }
         if($start_date) { $this->datatables->where('date >=', $start_date); }
         if($end_date) { $this->datatables->where('date <=', $end_date); }
 

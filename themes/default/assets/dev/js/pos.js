@@ -5,6 +5,13 @@ function add_invoice_item(item) {
     if (item == null) {
         return;
     }
+    if (
+        $('#sale_mode').val() === 'cost_sale' &&
+        (!item.row.cost_price || parseFloat(item.row.cost_price) <= 0)
+    ) {
+        bootbox.alert(lang.cost_price_unavailable + ' (' + item.row.name + ')');
+        return false;
+    }
 
     var item_id = Settings.item_addition == 1 ? item.item_id : item.id;
     if (spositems[item_id]) {
@@ -565,6 +572,12 @@ $(document).ready(function() {
                                 if (get('spos_customer')) {
                                     remove('spos_customer');
                                 }
+                                if (get('spos_sale_mode')) {
+                                    remove('spos_sale_mode');
+                                }
+                                if (get('spos_cost_sale_reason')) {
+                                    remove('spos_cost_sale_reason');
+                                }
                                 window.location.href = base_url + 'pos';
                             } else {
                                 bootbox.alert(lang.wrong_pin);
@@ -601,6 +614,12 @@ $(document).ready(function() {
                     }
                     if (get('spos_customer')) {
                         remove('spos_customer');
+                    }
+                    if (get('spos_sale_mode')) {
+                        remove('spos_sale_mode');
+                    }
+                    if (get('spos_cost_sale_reason')) {
+                        remove('spos_cost_sale_reason');
                     }
                     window.location.href = base_url + 'pos';
                 }
@@ -1106,10 +1125,10 @@ $(document).ready(function() {
                 suspend.appendTo('#hidesuspend');
             }
 
-            gtotal = formatDecimal(total - order_discount + order_tax);
+            gtotal = formatDecimal(total - order_discount + order_tax, 4);
             if (Settings.rounding != 0) {
-                round_total = roundNumber(gtotal, parseInt(Settings.rounding));
-                var rounding = formatDecimal(round_total - gtotal);
+                round_total = formatDecimal(roundNumber(gtotal, parseInt(Settings.rounding)), 4);
+                var rounding = formatDecimal(round_total - gtotal, 4);
                 $('#twt').text(formatMoney(round_total) + ' (' + formatMoney(rounding) + ')');
                 $('#quick-payable').text(round_total);
             } else {
@@ -1140,12 +1159,12 @@ $(document).ready(function() {
         $('#total_paying').text(formatMoney(total_paying));
         if (Settings.rounding != 0) {
             $('#balance').text(formatMoney(total_paying - round_total));
-            $('#balance_val').val(formatDecimal(total_paying - round_total));
+            $('#balance_val').val(formatDecimal(total_paying - round_total, 4));
             total_paid = total_paying;
             grand_total = round_total;
         } else {
             $('#balance').text(formatMoney(total_paying - gtotal));
-            $('#balance_val').val(formatDecimal(total_paying - gtotal));
+            $('#balance_val').val(formatDecimal(total_paying - gtotal, 4));
             total_paid = total_paying;
             grand_total = gtotal;
         }
@@ -1160,11 +1179,11 @@ $(document).ready(function() {
         $('#amount').val(grand_total);
         var p_val = $(this).val();
         $('#paid_by_val').val(p_val);
-        var gtotal = formatDecimal(total - order_discount + order_tax);
+        var gtotal = formatDecimal(total - order_discount + order_tax, 4);
         if (Settings.rounding != 0) {
-            var rounded_total = formatDecimal(roundNumber(gtotal, parseInt(Settings.rounding)));
+            var rounded_total = formatDecimal(roundNumber(gtotal, parseInt(Settings.rounding)), 4);
         } else {
-            var rounded_total = formatDecimal(gtotal);
+            var rounded_total = formatDecimal(gtotal, 4);
         }
         $('#rpaidby').val(p_val);
         if (p_val == 'gift_card') {
@@ -1793,9 +1812,9 @@ $(document).ready(function() {
     
     function refreshMissingCostPrices(items, callback) {
         var pending = 0;
-        var unavailable = false;
+        var unavailable_items = [];
 
-        $.each(items, function() {
+        $.each(items, function(item_id) {
             var item = this;
             if (item.row.cost_price && parseFloat(item.row.cost_price) > 0) {
                 return;
@@ -1811,28 +1830,35 @@ $(document).ready(function() {
                     if (data && data.row && data.row.cost_price && parseFloat(data.row.cost_price) > 0) {
                         item.row.cost_price = data.row.cost_price;
                     } else {
-                        unavailable = true;
+                        unavailable_items.push({ id: item_id, name: item.row.name });
                     }
                 })
                 .fail(function() {
-                    unavailable = true;
+                    unavailable_items.push({ id: item_id, name: item.row.name });
                 })
                 .always(function() {
                     pending--;
                     if (pending === 0) {
                         store('spositems', JSON.stringify(items));
-                        callback(!unavailable);
+                        callback(unavailable_items);
                     }
                 });
         });
 
         if (pending === 0) {
-            callback(true);
+            callback(unavailable_items);
         }
     }
 
     function applySaleModeGuards() {
-        var cost_sale = $('#sale_mode').val() === 'cost_sale';
+        var sale_mode = $('#sale_mode').val();
+        var price_labels = {
+            retail_sale: lang.retail_price_header,
+            whole_sale: lang.wholesale_price_header,
+            cost_sale: lang.cost_price_header
+        };
+        var cost_sale = sale_mode === 'cost_sale';
+        $('.sale-price-label').text(price_labels[sale_mode] || lang.retail_price_header);
         $('#cost-sale-reason-group').toggle(cost_sale);
         $('#cost_sale_reason').prop('required', cost_sale);
         $('#add_discount').toggleClass('disabled', cost_sale);
@@ -1852,13 +1878,19 @@ $(document).ready(function() {
             remove('spos_discount');
             $('#discount_val').val('0');
             if (missing_cost) {
-                refreshMissingCostPrices(spositems, function(success) {
-                    if (!success) {
-                        bootbox.alert(lang.cost_price_unavailable);
-                        $('#sale_mode').val('retail_sale').trigger('change.select2');
-                        $('#cost-sale-reason-group').hide();
-                        $('#cost_sale_reason').prop('required', false);
-                        $('#add_discount').removeClass('disabled');
+                refreshMissingCostPrices(spositems, function(unavailable_items) {
+                    if ($('#sale_mode').val() !== 'cost_sale') {
+                        loadItems();
+                        return;
+                    }
+                    if (unavailable_items.length) {
+                        var unavailable_names = [];
+                        $.each(unavailable_items, function() {
+                            delete spositems[this.id];
+                            unavailable_names.push(this.name);
+                        });
+                        store('spositems', JSON.stringify(spositems));
+                        bootbox.alert(lang.cost_price_unavailable + ' (' + unavailable_names.join(', ') + ')');
                     }
                     loadItems();
                 });
@@ -1868,7 +1900,13 @@ $(document).ready(function() {
         loadItems();
     }
 
-    $('#sale_mode').on('change', applySaleModeGuards);
+    $('#sale_mode').on('change', function() {
+        store('spos_sale_mode', $(this).val());
+        applySaleModeGuards();
+    });
+    $('#cost_sale_reason').on('input change', function() {
+        store('spos_cost_sale_reason', $(this).val());
+    });
     applySaleModeGuards();
 });
 $.fn.focusToEnd = function() {

@@ -104,7 +104,7 @@
                 <thead>
                 <tr>
                     <th width="50%" class="text-center"><?= lang('product'); ?></th>
-                    <th width="15%" class="text-center"><?= lang('price'); ?></th>
+                    <th width="15%" class="text-center" id="sale-price-label"><?= lang('price'); ?></th>
                     <th width="15%" class="text-center"><?= lang('qty'); ?></th>
                     <th width="20%" class="text-center"><?= lang('subtotal'); ?></th>
                 </tr>
@@ -182,10 +182,20 @@
             loadItems();
         }, 1000);
     });
-    function formatDecimal(x) {
-        return parseFloat(parseFloat(x).toFixed(Settings.decimals));
+    function formatDecimal(x, decimals) {
+        return parseFloat(parseFloat(x).toFixed(decimals === undefined ? 4 : decimals));
+    }
+    function formatQuantity(x) {
+        return accounting.formatNumber(x, Settings.qty_decimals, Settings.thousands_sep == 0 ? ' ' : Settings.thousands_sep, Settings.decimals_sep);
     }
     function loadItems() {
+    var sale_mode = get('spos_sale_mode') || 'retail_sale';
+    var price_labels = {
+        retail_sale: <?= json_encode(lang('price')); ?>,
+        whole_sale: <?= json_encode(lang('ws_price_header')); ?>,
+        cost_sale: <?= json_encode(lang('cost')); ?>
+    };
+    $('#sale-price-label').text(price_labels[sale_mode] || price_labels.retail_sale);
     if (count == 1) {
         spositems = {};
     }
@@ -209,69 +219,73 @@
             spositems[item_id] = item;
 
             var product_id = item.row.id, item_type = item.row.type, item_tax_method = parseFloat(item.row.tax_method), combo_items = item.combo_items, item_qty = item.row.qty, item_aqty = parseFloat(item.row.quantity), item_type = item.row.type, item_ds = item.row.discount, item_code = item.row.code, item_name = item.row.name.replace(/"/g, "&#034;").replace(/'/g, "&#039;");
-            var unit_price = parseFloat(item.row.real_unit_price);
+            var unit_price = parseFloat(
+                sale_mode === 'cost_sale'
+                    ? item.row.cost_price
+                    : sale_mode === 'whole_sale'
+                        ? item.row.ws_price
+                        : item.row.price
+            );
 
-            var ds = item_ds ? item_ds : '0';
-            var item_discount = formatDecimal(ds);
+            var ds = sale_mode === 'cost_sale' ? '0' : (item_ds ? item_ds : '0');
+            var item_discount = formatDecimal(ds, 4);
             if (ds.indexOf("%") !== -1) {
                 var pds = ds.split("%");
                 if (!isNaN(pds[0])) {
-                    item_discount = formatDecimal(parseFloat(((unit_price) * parseFloat(pds[0])) / 100));
+                    item_discount = formatDecimal((unit_price * parseFloat(pds[0])) / 100, 4);
                 }
             }
 
-            product_discount += formatDecimal(item_discount * item_qty);
-            unit_price = formatDecimal(unit_price-item_discount);
+            product_discount += formatDecimal(item_discount * item_qty, 4);
+            unit_price = formatDecimal(unit_price - item_discount, 4);
             var item_price = unit_price;
-            var pr_tax = parseInt(item.row.tax), pr_tax_val = 0;
+            var pr_tax = parseFloat(item.row.tax), pr_tax_val = 0;
 
             if (pr_tax !== null && pr_tax != 0) {
                 if (item_tax_method == 0) {
-                    pr_tax_val = formatDecimal((unit_price * parseFloat(pr_tax)) / (100+parseFloat(pr_tax)));
-                    item_price -= pr_tax_val;
+                    pr_tax_val = formatDecimal((unit_price * pr_tax) / (100 + pr_tax), 4);
+                    item_price = formatDecimal(item_price - pr_tax_val, 4);
                     tax = '<?= lang('inclusive'); ?>';
                 } else {
-                    pr_tax_val = formatDecimal((unit_price * parseFloat(pr_tax)) / 100);
+                    pr_tax_val = formatDecimal((unit_price * pr_tax) / 100, 4);
                     tax = '<?= lang('exclusive'); ?>';
                 }
             }
-            product_tax += formatDecimal(pr_tax_val * item_qty);
-            unit_price = formatDecimal(unit_price+item_discount);
+            product_tax += formatDecimal(pr_tax_val * item_qty, 4);
 
             var row_no = (new Date).getTime();
             var newTr = $('<tr></tr>');
             tr_html = '<td>' + item_name + ' (' + item_code + ')</td>';
             tr_html += '<td class="text-right">' + formatMoney(parseFloat(item_price) + parseFloat(pr_tax_val)) + '</td>';
-            tr_html += '<td class="text-center">' + formatDecimal(item_qty) + '</td>';
+            tr_html += '<td class="text-center">' + formatQuantity(item_qty) + '</td>';
             tr_html += '<td class="text-right">' + formatMoney(((parseFloat(item_price) + parseFloat(pr_tax_val)) * parseFloat(item_qty))) + '</td>';
             newTr.html(tr_html);
             newTr.prependTo("#billTable");
-            total += ((parseFloat(item_price) + parseFloat(pr_tax_val)) * parseFloat(item_qty));
+            total += formatDecimal((parseFloat(item_price) + parseFloat(pr_tax_val)) * parseFloat(item_qty), 4);
             count += parseFloat(item_qty);
             an++;
             // $('#list-table-div').scrollTop(0);
         });
 
-
-        var ds = get('spos_discount') ? get('spos_discount') : ($('#discount_val').val() ? $('#discount_val').val() : '0');
+        var ds = sale_mode === 'cost_sale' ? '0' : (get('spos_discount') ? get('spos_discount') : ($('#discount_val').val() ? $('#discount_val').val() : '0'));
         if (ds.indexOf("%") !== -1) {
             var pds = ds.split("%");
-            order_discount = (total*parseFloat(pds[0]))/100;
+            order_discount = formatDecimal((total * parseFloat(pds[0])) / 100, 4);
         } else {
-            order_discount = parseFloat(ds);
+            order_discount = formatDecimal(ds, 4);
         }
         $("#ds_con").text('('+formatMoney(product_discount)+') '+formatMoney(order_discount));
 
-        var ts = get('spos_tax') ? get('spos_tax') : $('#tax_val').val();
+        var ts = get('spos_tax') ? get('spos_tax') : ($('#tax_val').val() || '0');
         if (ts.indexOf("%") !== -1) {
             var pts = ts.split("%");
-            order_tax = ((total-order_discount)*parseFloat(pts[0]))/100;
+            order_tax = formatDecimal(((total - order_discount) * parseFloat(pts[0])) / 100, 4);
         } else {
-            order_tax = parseFloat(ts);
+            order_tax = formatDecimal(ts, 4);
         }
         $("#ts_con").text(formatMoney(order_tax));
 
-        var g_total = total - parseFloat(order_discount) + parseFloat(order_tax);
+        var g_total = formatDecimal(total - parseFloat(order_discount) + parseFloat(order_tax), 4);
         grand_total = formatMoney(g_total);
           $("#total-payable").text(grand_total);
          $("#total").text(formatMoney(total));

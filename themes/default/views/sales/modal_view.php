@@ -69,12 +69,12 @@
                                 echo '<tr><th colspan="2" style="text-align:left;">' . lang('order_discount') . '</th><th colspan="2" style="text-align:right;">' . $this->tec->formatMoney($inv->total_discount) . '</th></tr>';
                             }
 
-                            if ($Settings->rounding) {
-                                $round_total = $this->tec->roundNumber($inv->grand_total, $Settings->rounding);
-                                $rounding    = $this->tec->formatMoney($round_total - $inv->grand_total); ?>
+                            $rounding = $this->tec->formatDecimal(is_numeric($inv->rounding) ? $inv->rounding : 0, 4);
+                            $round_total = $this->tec->formatDecimal($inv->grand_total + $rounding, 4);
+                            if (abs($rounding) >= 0.0001) { ?>
                                 <tr>
                                     <th colspan="2" style="text-align:left;"><?= lang('rounding'); ?></th>
-                                    <th colspan="2" style="text-align:right;"><?= $rounding; ?></th>
+                                    <th colspan="2" style="text-align:right;"><?= $this->tec->formatMoney($rounding); ?></th>
                                 </tr>
                                 <tr>
                                     <th colspan="2" style="text-align:left;"><?= lang('grand_total'); ?></th>
@@ -82,7 +82,7 @@
                                 </tr>
                                 <?php
                             } else {
-                                $round_total = $inv->grand_total; ?>
+                                ?>
                                 <tr>
                                     <th colspan="2" style="text-align:left;"><?= lang('grand_total'); ?></th>
                                     <th colspan="2" style="text-align:right;"><?= $this->tec->formatMoney($inv->grand_total); ?></th>
@@ -96,7 +96,7 @@
                             </tr>
                             <tr>
                                 <th colspan="2" style="text-align:left;"><?= lang('due_amount'); ?></th>
-                                <th colspan="2" style="text-align:right;"><?= $this->tec->formatMoney($inv->grand_total - $inv->paid); ?></th>
+                                <th colspan="2" style="text-align:right;"><?= $this->tec->formatMoney($round_total - $inv->paid); ?></th>
                             </tr>
                             <?php } ?>
                         </tfoot>

@@ -553,67 +553,96 @@ class Pos_model extends CI_Model
     }
 
     public function addSale($data, $items, $payment = array(), $did = NULL) {
+        $this->db->trans_begin();
 
-        if($this->db->insert('sales', $data)) {
-            $sale_id = $this->db->insert_id();
+        if (!$this->db->insert('sales', $data)) {
+            $this->db->trans_rollback();
+            return FALSE;
+        }
+        $sale_id = $this->db->insert_id();
 
-            foreach ($items as $item) {
-                $item['sale_id'] = $sale_id;
-                if($this->db->insert('sale_items', $item)) {
-                    if ($item['product_id'] > 0 && $product = $this->site->getProductByID($item['product_id'])) {
-                        if ($product->type == 'standard') {
-                            $this->db->update('product_store_qty', array('quantity' => ($product->quantity-$item['quantity'])), array('product_id' => $product->id, 'store_id' => $data['store_id']));
-                        } elseif ($product->type == 'combo') {
-                            $combo_items = $this->getComboItemsByPID($product->id);
-                            foreach ($combo_items as $combo_item) {
-                                $cpr = $this->site->getProductByID($combo_item->id);
-                                if($cpr->type == 'standard') {
-                                    $qty = $combo_item->qty * $item['quantity'];
-                                    $this->db->update('product_store_qty', array('quantity' => ($cpr->quantity-$qty)), array('product_id' => $cpr->id, 'store_id' => $data['store_id']));
-                                }
-                            }
+        foreach ($items as $item) {
+            $item['sale_id'] = $sale_id;
+            if (!$this->db->insert('sale_items', $item)) {
+                $this->db->trans_rollback();
+                return FALSE;
+            }
+            if ($item['product_id'] > 0) {
+                $product = $this->site->getProductByID($item['product_id'], $data['store_id']);
+                if (!$product) {
+                    $this->db->trans_rollback();
+                    return FALSE;
+                }
+                if ($product->type == 'standard') {
+                    $this->db->update('product_store_qty', array('quantity' => ($product->quantity-$item['quantity'])), array('product_id' => $product->id, 'store_id' => $data['store_id']));
+                } elseif ($product->type == 'combo') {
+                    $combo_items = $this->getComboItemsByPID($product->id);
+                    foreach ($combo_items as $combo_item) {
+                        $cpr = $this->site->getProductByID($combo_item->id, $data['store_id']);
+                        if (!$cpr) {
+                            $this->db->trans_rollback();
+                            return FALSE;
+                        }
+                        if($cpr->type == 'standard') {
+                            $qty = $combo_item->qty * $item['quantity'];
+                            $this->db->update('product_store_qty', array('quantity' => ($cpr->quantity-$qty)), array('product_id' => $cpr->id, 'store_id' => $data['store_id']));
                         }
                     }
                 }
             }
+        }
 
-            if($did) {
-                $this->db->delete('suspended_sales', array('id' => $did));
-                $this->db->delete('suspended_items', array('suspend_id' => $did));
+        if($did) {
+            $this->db->delete('suspended_sales', array('id' => $did));
+            $this->db->delete('suspended_items', array('suspend_id' => $did));
+        }
+        $msg = array();
+        $stripe_payment = !empty($payment) && $payment['paid_by'] == 'stripe';
+        if(! empty($payment) && !$stripe_payment) {
+            if ($payment['paid_by'] == 'gift_card') {
+                $gc = $this->getGiftCardByNO($payment['gc_no']);
+                if (!$gc) {
+                    $this->db->trans_rollback();
+                    return FALSE;
+                }
+                $this->db->update('gift_cards', array('balance' => ($gc->balance-$payment['amount'])), array('card_no' => $payment['gc_no']));
             }
-            $msg = array();
-            if(! empty($payment)) {
-                if ($payment['paid_by'] == 'stripe') {
-                    $card_info = array("number" => $payment['cc_no'], "exp_month" => $payment['cc_month'], "exp_year" => $payment['cc_year'], "cvc" => $payment['cc_cvv2'], 'type' => $payment['cc_type']);
-                    $result = $this->stripe($payment['amount'], $card_info);
-                    if (!isset($result['error']) && !empty($result['transaction_id'])) {
-                        $payment['transaction_id'] = $result['transaction_id'];
-                        $payment['date'] = $result['created_at'];
-                        $payment['amount'] = $result['amount'];
-                        $payment['currency'] = $result['currency'];
-                        unset($payment['cc_cvv2']);
-                        $payment['sale_id'] = $sale_id;
-                        $this->db->insert('payments', $payment);
-                    } else {
-                        $this->db->update('sales', ['paid' => 0, 'status' => 'due'], ['id' => $sale_id]);
-                        $msg[] = lang('payment_failed');
-                        $msg[] = '<p class="text-danger">' . $result['code'] . ': ' . $result['message'] . '</p>';
-                    }
-                } else {
-                    if ($payment['paid_by'] == 'gift_card') {
-                        $gc = $this->getGiftCardByNO($payment['gc_no']);
-                        $this->db->update('gift_cards', array('balance' => ($gc->balance-$payment['amount'])), array('card_no' => $payment['gc_no']));
-                    }
-                    unset($payment['cc_cvv2']);
-                    $payment['sale_id'] = $sale_id;
-                    $this->db->insert('payments', $payment);
+            unset($payment['cc_cvv2']);
+            $payment['sale_id'] = $sale_id;
+            $this->db->insert('payments', $payment);
+        }
+
+        if ($this->db->trans_status() === FALSE) {
+            $this->db->trans_rollback();
+            return FALSE;
+        }
+
+        $this->db->trans_commit();
+
+        if ($stripe_payment) {
+            $card_info = array("number" => $payment['cc_no'], "exp_month" => $payment['cc_month'], "exp_year" => $payment['cc_year'], "cvc" => $payment['cc_cvv2'], 'type' => $payment['cc_type']);
+            $result = $this->stripe($payment['amount'], $card_info);
+            if (!isset($result['error']) && !empty($result['transaction_id'])) {
+                $payment['transaction_id'] = $result['transaction_id'];
+                $payment['date'] = $result['created_at'];
+                $payment['amount'] = $result['amount'];
+                $payment['currency'] = $result['currency'];
+                unset($payment['cc_cvv2']);
+                $payment['sale_id'] = $sale_id;
+                if (!$this->db->insert('payments', $payment)) {
+                    $this->db->update('sales', ['paid' => 0, 'status' => 'due'], ['id' => $sale_id]);
+                    $msg[] = lang('payment_failed');
+                }
+            } else {
+                $this->db->update('sales', ['paid' => 0, 'status' => 'due'], ['id' => $sale_id]);
+                $msg[] = lang('payment_failed');
+                if (is_array($result) && isset($result['code'], $result['message'])) {
+                    $msg[] = '<p class="text-danger">' . $result['code'] . ': ' . $result['message'] . '</p>';
                 }
             }
+        }
 
-            return array('sale_id' => $sale_id, 'message' => $msg);
-            }
-
-        return false;
+        return array('sale_id' => $sale_id, 'message' => $msg);
     }
 
     function stripe($amount = 0, $card_info = array(), $desc = '') {
@@ -645,15 +674,31 @@ class Pos_model extends CI_Model
 
     public function updateSale($id, $data, $items) {
         $osale = $this->getSaleByID($id);
+        if (!$osale) {
+            return FALSE;
+        }
         $oitems = $this->getAllSaleItems($id);
+        $this->db->trans_begin();
+
         foreach ($oitems as $oitem) {
+            if ($oitem->product_id <= 0) {
+                continue;
+            }
             $product = $this->site->getProductByID($oitem->product_id, $osale->store_id);
+            if (!$product) {
+                $this->db->trans_rollback();
+                return FALSE;
+            }
             if ($product->type == 'standard') {
                 $this->db->update('product_store_qty', array('quantity' => ($product->quantity+$oitem->quantity)), array('product_id' => $product->id, 'store_id' => $osale->store_id));
             } elseif ($product->type == 'combo') {
                 $combo_items = $this->getComboItemsByPID($product->id);
                 foreach ($combo_items as $combo_item) {
                     $cpr = $this->site->getProductByID($combo_item->id, $osale->store_id);
+                    if (!$cpr) {
+                        $this->db->trans_rollback();
+                        return FALSE;
+                    }
                     if($cpr->type == 'standard') {
                         $qty = $combo_item->qty * $oitem->quantity;
                         $this->db->update('product_store_qty', array('quantity' => ($cpr->quantity+$qty)), array('product_id' => $cpr->id, 'store_id' => $osale->store_id));
@@ -664,59 +709,85 @@ class Pos_model extends CI_Model
 
         $data['status'] = $osale->paid > 0 ? 'partial' : ($data['grand_total'] <= $osale->paid ? 'paid' : 'due');
 
-        if($this->db->update('sales', $data, array('id' => $id)) && $this->db->delete('sale_items', array('sale_id' => $id))) {
+        if (!$this->db->update('sales', $data, array('id' => $id)) || !$this->db->delete('sale_items', array('sale_id' => $id))) {
+            $this->db->trans_rollback();
+            return FALSE;
+        }
 
-            foreach ($items as $item) {
-                $item['sale_id'] = $id;
-                if($this->db->insert('sale_items', $item)) {
-                    $product = $this->site->getProductByID($item['product_id'], $osale->store_id);
-                    if ($product->type == 'standard') {
-                        $this->db->update('product_store_qty', array('quantity' => ($product->quantity-$item['quantity'])), array('product_id' => $product->id, 'store_id' => $osale->store_id));
-                    } elseif ($product->type == 'combo') {
-                        $combo_items = $this->getComboItemsByPID($product->id);
-                        foreach ($combo_items as $combo_item) {
-                            $cpr = $this->site->getProductByID($combo_item->id, $osale->store_id);
-                            if($cpr->type == 'standard') {
-                                $qty = $combo_item->qty * $item['quantity'];
-                                $this->db->update('product_store_qty', array('quantity' => ($cpr->quantity-$qty)), array('product_id' => $cpr->id, 'store_id' => $osale->store_id));
-                            }
-                        }
+        foreach ($items as $item) {
+            $item['sale_id'] = $id;
+            if (!$this->db->insert('sale_items', $item)) {
+                $this->db->trans_rollback();
+                return FALSE;
+            }
+            if ($item['product_id'] <= 0) {
+                continue;
+            }
+            $product = $this->site->getProductByID($item['product_id'], $osale->store_id);
+            if (!$product) {
+                $this->db->trans_rollback();
+                return FALSE;
+            }
+            if ($product->type == 'standard') {
+                $this->db->update('product_store_qty', array('quantity' => ($product->quantity-$item['quantity'])), array('product_id' => $product->id, 'store_id' => $osale->store_id));
+            } elseif ($product->type == 'combo') {
+                $combo_items = $this->getComboItemsByPID($product->id);
+                foreach ($combo_items as $combo_item) {
+                    $cpr = $this->site->getProductByID($combo_item->id, $osale->store_id);
+                    if (!$cpr) {
+                        $this->db->trans_rollback();
+                        return FALSE;
+                    }
+                    if($cpr->type == 'standard') {
+                        $qty = $combo_item->qty * $item['quantity'];
+                        $this->db->update('product_store_qty', array('quantity' => ($cpr->quantity-$qty)), array('product_id' => $cpr->id, 'store_id' => $osale->store_id));
                     }
                 }
             }
+        }
 
-            return TRUE;
-            }
+        if ($this->db->trans_status() === FALSE) {
+            $this->db->trans_rollback();
+            return FALSE;
+        }
 
-        return false;
+        $this->db->trans_commit();
+        return TRUE;
     }
 
     public function suspendSale($data, $items, $did = NULL) {
+        $this->db->trans_begin();
+        $suspend_id = $did;
 
         if($did) {
-
-            if($this->db->update('suspended_sales', $data, array('id' => $did)) && $this->db->delete('suspended_items', array('suspend_id' => $did))) {
-                foreach ($items as $item) {
-                    unset($item['cost']);
-                    $item['suspend_id'] = $did;
-                    $this->db->insert('suspended_items', $item);
-                }
-                return TRUE;
+            if (!$this->db->update('suspended_sales', $data, array('id' => $did)) || !$this->db->delete('suspended_items', array('suspend_id' => $did))) {
+                $this->db->trans_rollback();
+                return FALSE;
             }
-
         } else {
+            if (!$this->db->insert('suspended_sales', $data)) {
+                $this->db->trans_rollback();
+                return FALSE;
+            }
+            $suspend_id = $this->db->insert_id();
+        }
 
-            if($this->db->insert('suspended_sales', $data)) {
-                $suspend_id = $this->db->insert_id();
-                foreach ($items as $item) {
-                    unset($item['cost']);
-                    $item['suspend_id'] = $suspend_id;
-                    $this->db->insert('suspended_items', $item);
-                }
-                return $suspend_id;
+        foreach ($items as $item) {
+            unset($item['cost']);
+            $item['suspend_id'] = $suspend_id;
+            if (!$this->db->insert('suspended_items', $item)) {
+                $this->db->trans_rollback();
+                return FALSE;
             }
         }
-        return false;
+
+        if ($this->db->trans_status() === FALSE) {
+            $this->db->trans_rollback();
+            return FALSE;
+        }
+
+        $this->db->trans_commit();
+        return $did ? TRUE : $suspend_id;
     }
 
     public function getSaleByID($sale_id) {

@@ -171,10 +171,10 @@ class Escpos
                 $this->printer->text($this->printLine(lang("order_discount").":".$this->tec->formatMoney($sale->total_discount)) . "\n");
             }
 			
-            if ($this->Settings->rounding) {
+            $rounding = $this->tec->formatDecimal(isset($sale->rounding) && is_numeric($sale->rounding) ? $sale->rounding : 0, 4);
+            $round_total = $this->tec->formatDecimal($sale->grand_total + $rounding, 4);
+            if (abs($rounding) >= 0.0001) {
 				$this->printer->text($this->drawLine());
-                $round_total = $this->tec->roundNumber($sale->grand_total, $this->Settings->rounding);
-                $rounding = $this->tec->formatMoney($round_total - $sale->grand_total);
                 //$this->printer->text($this->printLine(lang("rounding").":".$this->tec->formatMoney($rounding)) . "\n");
 				if ($sale->product_tax != 0) {
 					$this->printer->text($this->printLine(lang("subtotal").":".$this->tec->formatMoney(($sale->grand_total + $rounding) - $sale->product_tax)) . "\n");
@@ -186,7 +186,6 @@ class Escpos
             }
             else {
 				$this->printer->text($this->drawLine());
-                $round_total = $sale->grand_total;
 				if ($sale->product_tax != 0) {					
 					$this->printer->text($this->printLine(lang("subtotal").":".$this->tec->formatMoney($sale->grand_total  - $sale->product_tax)) . "\n");
 
@@ -197,7 +196,7 @@ class Escpos
             }
             if ($sale->paid < $round_total && !$bill) {
                 $this->printer->text($this->printLine(lang("paid_amount").":".$this->tec->formatMoney($sale->paid)) . "\n");
-                $this->printer->text($this->printLine(lang("due_amount").":".$this->tec->formatMoney($sale->grand_total - $sale->paid)) . "\n");
+                $this->printer->text($this->printLine(lang("due_amount").":".$this->tec->formatMoney($round_total - $sale->paid)) . "\n");
             }
 
             if ( ! $bill) {

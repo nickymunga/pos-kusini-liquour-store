@@ -64,10 +64,11 @@ $query_builder = TRUE;
 
 $db['default'] = array(
 	'dsn'	=> '',
-	'hostname' => 'localhost',
-	'username' => 'db_user',
-	'password' => 'Pass1Word#',
-	'database' => 'pos_store',
+	'hostname' => getenv('DB_HOST') ?: 'localhost',
+	'username' => getenv('DB_USERNAME') ?: 'db_user',
+	'password' => getenv('DB_PASSWORD') ?: 'Pass1Word#',
+	'database' => getenv('DB_DATABASE') ?: 'pos_store',
+	'port' => getenv('DB_PORT') ?: 3306,
 	'dbdriver' => 'mysqli',
 	'dbprefix' => 'tec_',
 	'pconnect' => FALSE,

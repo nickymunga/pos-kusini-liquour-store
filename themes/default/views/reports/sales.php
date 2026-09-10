@@ -9,6 +9,9 @@ if ($this->input->post('customer')){
 if ($this->input->post('user')){
     $v .= "&user=".$this->input->post('user');
 }
+if ($this->input->post('sale_mode')){
+    $v .= "&sale_mode=".$this->input->post('sale_mode');
+}
 if ($this->input->post('start_date')){
     $v .= "&start_date=".$this->input->post('start_date');
 }
@@ -36,17 +39,27 @@ if ($this->input->post('end_date')) {
             }
         }
 
+        function saleMode(x) {
+            var labels = {
+                retail_sale: '<?= lang('retail_sale'); ?>',
+                whole_sale: '<?= lang('whole_sale'); ?>',
+                cost_sale: '<?= lang('cost_sale'); ?>'
+            };
+            var style = x == 'cost_sale' ? 'label-warning' : (x == 'whole_sale' ? 'label-info' : 'label-default');
+            return '<div class="text-center"><span class="label '+style+'">'+(labels[x] || x)+'</span></div>';
+        }
+
         var table = $('#SLRData').DataTable({
 
             'ajax' : { url: '<?=site_url('reports/get_sales/'. $v);?>', type: 'POST', "data": function ( d ) {
                 d.<?=$this->security->get_csrf_token_name();?> = "<?=$this->security->get_csrf_hash()?>";
             }},
             "buttons": [
-            { extend: 'copyHtml5', 'footer': true, exportOptions: { columns: [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ] } },
-            { extend: 'excelHtml5', 'footer': true, exportOptions: { columns: [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ] } },
-            { extend: 'csvHtml5', 'footer': true, exportOptions: { columns: [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ] } },
+            { extend: 'copyHtml5', 'footer': true, exportOptions: { columns: [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ] } },
+            { extend: 'excelHtml5', 'footer': true, exportOptions: { columns: [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ] } },
+            { extend: 'csvHtml5', 'footer': true, exportOptions: { columns: [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ] } },
             { extend: 'pdfHtml5', orientation: 'landscape', pageSize: 'A4', 'footer': true,
-            exportOptions: { columns: [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ] } },
+            exportOptions: { columns: [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ] } },
             { extend: 'colvis', text: 'Columns'},
             ],
             "columns": [
@@ -59,6 +72,7 @@ if ($this->input->post('end_date')) {
             { "data": "grand_total", "render": currencyFormat },
             { "data": "paid", "render": currencyFormat },
             { "data": "balance", "render": currencyFormat },
+            { "data": "sale_mode", "render": saleMode },
             { "data": "status", "render": status }
             ],
             "footerCallback": function (  tfoot, data, start, end, display ) {
@@ -147,16 +161,22 @@ if ($this->input->post('end_date')) {
                                     </div>
                                 </div>
 
-                                <div class="col-sm-3">
+                                <div class="col-sm-2">
                                     <div class="form-group">
                                         <label class="control-label" for="start_date"><?= lang("start_date"); ?></label>
                                         <?= form_input('start_date', set_value('start_date'), 'class="form-control datetimepicker" id="start_date"');?>
                                     </div>
                                 </div>
-                                <div class="col-sm-3">
+                                <div class="col-sm-2">
                                     <div class="form-group">
                                         <label class="control-label" for="end_date"><?= lang("end_date"); ?></label>
                                         <?= form_input('end_date', set_value('end_date'), 'class="form-control datetimepicker" id="end_date"');?>
+                                    </div>
+                                </div>
+                                <div class="col-sm-2">
+                                    <div class="form-group">
+                                        <label class="control-label" for="sale_mode"><?= lang("sale_mode"); ?></label>
+                                        <?= form_dropdown('sale_mode', array('' => lang('all'), 'retail_sale' => lang('retail_sale'), 'whole_sale' => lang('whole_sale'), 'cost_sale' => lang('cost_sale')), set_value('sale_mode'), 'class="form-control select2" id="sale_mode" style="width:100%;"'); ?>
                                     </div>
                                 </div>
                                 <div class="col-sm-12">
@@ -182,12 +202,13 @@ if ($this->input->post('end_date')) {
                                             <th class="col-sm-2"><?= lang("grand_total"); ?></th>
                                             <th class="col-sm-1"><?= lang("paid"); ?></th>
                                             <th class="col-sm-1"><?= lang("balance"); ?></th>
+                                            <th class="col-sm-1"><?= lang("sale_mode"); ?></th>
                                             <th class="col-sm-1"><?= lang("status"); ?></th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <tr>
-                                            <td colspan="10" class="dataTables_empty"><?= lang('loading_data_from_server'); ?></td>
+                                            <td colspan="11" class="dataTables_empty"><?= lang('loading_data_from_server'); ?></td>
                                         </tr>
                                     </tbody>
                                     <tfoot>
@@ -202,11 +223,14 @@ if ($this->input->post('end_date')) {
                                             <th class="col-sm-1"><?= lang("paid"); ?></th>
                                             <th class="col-sm-1"><?= lang("balance"); ?></th>
                                             <th class="col-sm-1">
+                                                <select class="select2 select_filter"><option value=""><?= lang("all"); ?></option><option value="retail_sale"><?= lang("retail_sale"); ?></option><option value="whole_sale"><?= lang("whole_sale"); ?></option><option value="cost_sale"><?= lang("cost_sale"); ?></option></select>
+                                            </th>
+                                            <th class="col-sm-1">
                                                 <select class="select2 select_filter"><option value=""><?= lang("all"); ?></option><option value="paid"><?= lang("paid"); ?></option><option value="partial"><?= lang("partial"); ?></option><option value="due"><?= lang("due"); ?></option></select>
                                             </th>
                                         </tr>
                                         <tr>
-                                            <td colspan="10" class="p0"><input type="text" class="form-control b0" name="search_table" id="search_table" placeholder="<?= lang('type_hit_enter'); ?>" style="width:100%;"></td>
+                                            <td colspan="11" class="p0"><input type="text" class="form-control b0" name="search_table" id="search_table" placeholder="<?= lang('type_hit_enter'); ?>" style="width:100%;"></td>
                                         </tr>
                                     </tfoot>
                                 </table>
